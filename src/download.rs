@@ -21,77 +21,192 @@ pub async fn download_stream(stream: &StreamLink, options: &DownloadOptions) -> 
     let filename = sanitize_filename(&options.filename);
     let target = options.directory.join(format!("{filename}.mp4"));
     if stream.hls {
-        if run_hls_tool(
-            "yt-dlp",
-            &[
-                "--referer",
-                stream.headers.referer.as_deref().unwrap_or(""),
-                "--no-skip-unavailable-fragments",
-                "--fragment-retries",
-                "infinite",
-                "--progress",
-                "-N",
-                "16",
-                "-o",
-                &target.to_string_lossy(),
-                &stream.url,
-            ],
-        )
-        .await?
-        {
-            return Ok(target);
+        download_hls(stream, &target).await?;
+        return Ok(target);
+    }
+
+    let partial = target.with_extension("mp4.part");
+    match run_tool("aria2c", &aria2_args(stream, &partial)).await {
+        ToolAttempt::Success => match finalize_partial(&partial, &target).await {
+            Ok(()) => return Ok(target),
+            Err(error) => eprintln!(
+                "aria2c finished but its output could not be finalized ({error}); falling back to the built-in downloader..."
+            ),
+        },
+        ToolAttempt::Failed(error) => {
+            eprintln!("aria2c failed ({error}); falling back to the built-in downloader...");
         }
-        if run_hls_tool(
-            "ffmpeg",
-            &[
-                "-extension_picky",
-                "0",
-                "-referer",
-                stream.headers.referer.as_deref().unwrap_or(""),
-                "-loglevel",
-                "error",
-                "-stats",
-                "-i",
-                &stream.url,
-                "-c",
-                "copy",
-                &target.to_string_lossy(),
-            ],
-        )
-        .await?
-        {
-            return Ok(target);
-        }
-        return Err(AniError::Download(
-            "HLS downloads require yt-dlp or ffmpeg in PATH".into(),
-        ));
+        ToolAttempt::Unavailable => {}
     }
     download_direct(stream, &target).await?;
     Ok(target)
 }
 
-async fn run_hls_tool(program: &str, args: &[&str]) -> Result<bool> {
-    let available = Command::new(program)
+async fn download_hls(stream: &StreamLink, target: &Path) -> Result<()> {
+    let mut failures = Vec::new();
+    if program_available("aria2c").await {
+        match run_tool("yt-dlp", &yt_dlp_args(stream, target, true)).await {
+            ToolAttempt::Success => return Ok(()),
+            ToolAttempt::Failed(error) => {
+                eprintln!("yt-dlp with aria2c failed ({error}); retrying with yt-dlp...");
+                failures.push(error);
+            }
+            ToolAttempt::Unavailable => {}
+        }
+    }
+
+    match run_tool("yt-dlp", &yt_dlp_args(stream, target, false)).await {
+        ToolAttempt::Success => return Ok(()),
+        ToolAttempt::Failed(error) => {
+            eprintln!("yt-dlp failed ({error}); falling back to FFmpeg...");
+            failures.push(error);
+        }
+        ToolAttempt::Unavailable => {}
+    }
+    match run_tool("ffmpeg", &ffmpeg_args(stream, target)).await {
+        ToolAttempt::Success => return Ok(()),
+        ToolAttempt::Failed(error) => failures.push(error),
+        ToolAttempt::Unavailable => {}
+    }
+
+    if failures.is_empty() {
+        Err(AniError::Download(
+            "HLS downloads require yt-dlp or ffmpeg in PATH".into(),
+        ))
+    } else {
+        Err(AniError::Download(format!(
+            "all available HLS downloaders failed: {}",
+            failures.join("; ")
+        )))
+    }
+}
+
+async fn program_available(program: &str) -> bool {
+    Command::new(program)
         .arg("--version")
         .output()
         .await
-        .is_ok();
-    if !available {
-        return Ok(false);
+        .is_ok()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ToolAttempt {
+    Unavailable,
+    Success,
+    Failed(String),
+}
+
+async fn run_tool(program: &str, args: &[String]) -> ToolAttempt {
+    if !program_available(program).await {
+        return ToolAttempt::Unavailable;
     }
     eprintln!("Downloading with {program} (progress is reported by {program})...");
-    let status = Command::new(program)
-        .args(args)
-        .status()
-        .await
-        .map_err(|e| AniError::Download(format!("could not start {program}: {e}")))?;
-    if !status.success() {
-        return Err(AniError::Download(format!(
+    match Command::new(program).args(args).status().await {
+        Ok(status) if status.success() => ToolAttempt::Success,
+        Ok(status) => ToolAttempt::Failed(format!(
             "{program} exited with {}",
             status.code().unwrap_or(1)
-        )));
+        )),
+        Err(error) => ToolAttempt::Failed(format!("could not start {program}: {error}")),
     }
-    Ok(true)
+}
+
+fn yt_dlp_args(stream: &StreamLink, target: &Path, aria2: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    if aria2 {
+        args.extend(["--downloader".into(), "aria2c".into()]);
+    }
+    append_yt_dlp_headers(&mut args, stream);
+    args.extend([
+        "--no-skip-unavailable-fragments".into(),
+        "--fragment-retries".into(),
+        "infinite".into(),
+        "--progress".into(),
+        "-N".into(),
+        "16".into(),
+        "-o".into(),
+        target.to_string_lossy().into_owned(),
+        stream.url.clone(),
+    ]);
+    args
+}
+
+fn append_yt_dlp_headers(args: &mut Vec<String>, stream: &StreamLink) {
+    if let Some(referer) = &stream.headers.referer {
+        args.extend(["--referer".into(), referer.clone()]);
+    }
+    if let Some(origin) = &stream.headers.origin {
+        args.extend(["--add-headers".into(), format!("Origin:{origin}")]);
+    }
+    for (name, value) in &stream.headers.extra {
+        args.extend(["--add-headers".into(), format!("{name}:{value}")]);
+    }
+}
+
+fn ffmpeg_args(stream: &StreamLink, target: &Path) -> Vec<String> {
+    let mut args = vec!["-y".into(), "-extension_picky".into(), "0".into()];
+    if let Some(referer) = &stream.headers.referer {
+        args.extend(["-referer".into(), referer.clone()]);
+    }
+    let mut headers = Vec::new();
+    if let Some(origin) = &stream.headers.origin {
+        headers.push(format!("Origin: {origin}"));
+    }
+    headers.extend(
+        stream
+            .headers
+            .extra
+            .iter()
+            .map(|(name, value)| format!("{name}: {value}")),
+    );
+    if !headers.is_empty() {
+        args.extend(["-headers".into(), format!("{}\r\n", headers.join("\r\n"))]);
+    }
+    args.extend([
+        "-loglevel".into(),
+        "error".into(),
+        "-stats".into(),
+        "-i".into(),
+        stream.url.clone(),
+        "-c".into(),
+        "copy".into(),
+        target.to_string_lossy().into_owned(),
+    ]);
+    args
+}
+
+fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
+    let directory = partial.parent().unwrap_or_else(|| Path::new("."));
+    let filename = partial
+        .file_name()
+        .unwrap_or(partial.as_os_str())
+        .to_string_lossy();
+    let mut args = vec![
+        "--continue=true".into(),
+        "--max-connection-per-server=16".into(),
+        "--split=16".into(),
+        "--min-split-size=1M".into(),
+        "--file-allocation=none".into(),
+        "--auto-file-renaming=false".into(),
+        "--allow-overwrite=true".into(),
+        format!("--dir={}", directory.to_string_lossy()),
+        format!("--out={filename}"),
+    ];
+    if let Some(referer) = &stream.headers.referer {
+        args.push(format!("--referer={referer}"));
+    }
+    if let Some(origin) = &stream.headers.origin {
+        args.push(format!("--header=Origin: {origin}"));
+    }
+    args.extend(
+        stream
+            .headers
+            .extra
+            .iter()
+            .map(|(name, value)| format!("--header={name}: {value}")),
+    );
+    args.push(stream.url.clone());
+    args
 }
 
 async fn download_direct(stream: &StreamLink, target: &Path) -> Result<()> {
@@ -104,6 +219,12 @@ async fn download_direct(stream: &StreamLink, target: &Path) -> Result<()> {
     let mut request = client.get(&stream.url);
     if let Some(referer) = &stream.headers.referer {
         request = request.header(header::REFERER, referer);
+    }
+    if let Some(origin) = &stream.headers.origin {
+        request = request.header(header::ORIGIN, origin);
+    }
+    for (name, value) in &stream.headers.extra {
+        request = request.header(name, value);
     }
     if existing > 0 {
         request = request.header(header::RANGE, format!("bytes={existing}-"));
@@ -135,10 +256,21 @@ async fn download_direct(stream: &StreamLink, target: &Path) -> Result<()> {
     file.flush().await?;
     progress.finish();
     drop(file);
+    finalize_partial(&partial, target).await?;
+    Ok(())
+}
+
+async fn finalize_partial(partial: &Path, target: &Path) -> Result<()> {
     if tokio::fs::try_exists(target).await? {
         tokio::fs::remove_file(target).await?;
     }
     tokio::fs::rename(partial, target).await?;
+    let mut control = partial.as_os_str().to_os_string();
+    control.push(".aria2");
+    let control = PathBuf::from(control);
+    if tokio::fs::try_exists(&control).await? {
+        tokio::fs::remove_file(control).await?;
+    }
     Ok(())
 }
 
@@ -298,6 +430,23 @@ fn sanitize_filename(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RequestHeaders;
+
+    fn test_stream(hls: bool) -> StreamLink {
+        StreamLink {
+            url: "https://media.example/video".into(),
+            resolution: "1080p".into(),
+            hls,
+            provider: "Example".into(),
+            downloadable: true,
+            headers: RequestHeaders {
+                referer: Some("https://example.com/watch".into()),
+                origin: Some("https://example.com".into()),
+                extra: [("X-Test".into(), "value".into())].into(),
+            },
+        }
+    }
+
     #[test]
     fn sanitizes_windows_filename_characters() {
         assert_eq!(sanitize_filename("A: B?"), "A_ B_");
@@ -314,5 +463,39 @@ mod tests {
     #[test]
     fn formats_long_download_eta() {
         assert_eq!(format_duration(Duration::from_secs(3723)), "01:02:03");
+    }
+
+    #[test]
+    fn aria2_direct_arguments_enable_parallel_resume_and_headers() {
+        let args = aria2_args(&test_stream(false), Path::new("downloads/episode.mp4.part"));
+
+        assert!(args.contains(&"--continue=true".into()));
+        assert!(args.contains(&"--max-connection-per-server=16".into()));
+        assert!(args.contains(&"--split=16".into()));
+        assert!(args.contains(&"--referer=https://example.com/watch".into()));
+        assert!(args.contains(&"--header=Origin: https://example.com".into()));
+        assert!(args.contains(&"--header=X-Test: value".into()));
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some("https://media.example/video")
+        );
+    }
+
+    #[test]
+    fn yt_dlp_can_delegate_hls_downloads_to_aria2() {
+        let args = yt_dlp_args(&test_stream(true), Path::new("episode.mp4"), true);
+
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--downloader", "aria2c"])
+        );
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--referer", "https://example.com/watch"])
+        );
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--add-headers", "Origin:https://example.com"])
+        );
     }
 }
