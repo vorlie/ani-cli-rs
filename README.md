@@ -89,6 +89,8 @@ Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_D
 
 History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `ANI_CLI_HIST_DIR` to share an existing history directory.
 
+After a single episode is launched from an interactive terminal, ani-cli-rs keeps the session open with controls for next, replay, previous, episode selection, and quality changes. This menu is also shown when the episode was supplied through `-e/--episode`; use `--exit-after-play` to skip it.
+
 ### Keyboard navigation
 
 - Arrow keys navigate every menu; `Tab` and `Shift+Tab` also move down and up.

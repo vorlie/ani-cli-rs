@@ -191,7 +191,6 @@ async fn run(cli: Cli) -> Result<()> {
             .transpose()?
             .unwrap_or_default()
     };
-    let explicit_episode = cli.episode.is_some();
     let (show, episodes, selected) = if cli.continue_watching {
         let Some((show, episodes, initial_episode)) =
             continue_selection(&client, &history, mode, cli.select_nth).await?
@@ -267,7 +266,12 @@ async fn run(cli: Cli) -> Result<()> {
         play_or_download(&context, episode, &cli.quality, cli.download).await?;
     }
 
-    if selected.len() == 1 && !explicit_episode && std::io::stdin().is_terminal() && !cli.download {
+    if should_offer_playback_controls(
+        selected.len(),
+        std::io::stdin().is_terminal(),
+        cli.download,
+        cli.exit_after_play,
+    ) {
         interactive_after_play(&context, &selected[0], &cli.quality).await?;
     }
     Ok(())
@@ -563,36 +567,36 @@ async fn interactive_after_play(
     let mut episode = first.to_owned();
     let mut quality = initial_quality.to_owned();
     loop {
-        let commands = [
-            "next",
-            "replay",
-            "previous",
-            "select",
-            "change quality",
-            "quit",
-        ];
+        let actions = playback_actions(context.episodes, &episode);
+        let labels: Vec<_> = actions
+            .iter()
+            .map(|action| action.label(&quality))
+            .collect();
         let Some(choice) = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(format!(
-                "Playing episode {episode} of {} (j/k: move, q/Esc: quit)",
+                "Episode {episode} controls · {} (j/k: move, q/Esc: quit)",
                 context.show.name
             ))
-            .items(&commands)
+            .items(&labels)
             .default(0)
             .interact_opt()
             .map_err(dialog_error)?
         else {
             break;
         };
-        match commands[choice] {
-            "next" => episode = adjacent_episode(context.episodes, &episode, 1)?,
-            "previous" => episode = adjacent_episode(context.episodes, &episode, -1)?,
-            "select" => {
+        match actions[choice] {
+            PlaybackAction::Next => episode = adjacent_episode(context.episodes, &episode, 1)?,
+            PlaybackAction::Replay => {}
+            PlaybackAction::Previous => {
+                episode = adjacent_episode(context.episodes, &episode, -1)?;
+            }
+            PlaybackAction::Select => {
                 let Some(selected) = select_episode(context.episodes)? else {
                     continue;
                 };
                 episode = selected;
             }
-            "change quality" => {
+            PlaybackAction::ChangeQuality => {
                 let streams = context
                     .client
                     .streams(&context.show.id, &episode, context.mode)
@@ -611,12 +615,61 @@ async fn interactive_after_play(
                 };
                 quality = streams[index].resolution.clone();
             }
-            "quit" => break,
-            _ => {}
+            PlaybackAction::Quit => break,
         }
         play_or_download(context, &episode, &quality, false).await?;
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaybackAction {
+    Next,
+    Replay,
+    Previous,
+    Select,
+    ChangeQuality,
+    Quit,
+}
+
+impl PlaybackAction {
+    fn label(self, quality: &str) -> String {
+        match self {
+            Self::Next => "Next episode".into(),
+            Self::Replay => "Replay episode".into(),
+            Self::Previous => "Previous episode".into(),
+            Self::Select => "Choose another episode".into(),
+            Self::ChangeQuality => format!("Change quality (current: {quality})"),
+            Self::Quit => "Quit ani-cli-rs".into(),
+        }
+    }
+}
+
+fn playback_actions(episodes: &[String], current: &str) -> Vec<PlaybackAction> {
+    let position = episodes.iter().position(|episode| episode == current);
+    let mut actions = Vec::with_capacity(6);
+    if position.is_some_and(|index| index + 1 < episodes.len()) {
+        actions.push(PlaybackAction::Next);
+    }
+    actions.push(PlaybackAction::Replay);
+    if position.is_some_and(|index| index > 0) {
+        actions.push(PlaybackAction::Previous);
+    }
+    actions.extend([
+        PlaybackAction::Select,
+        PlaybackAction::ChangeQuality,
+        PlaybackAction::Quit,
+    ]);
+    actions
+}
+
+fn should_offer_playback_controls(
+    selected_count: usize,
+    terminal: bool,
+    download: bool,
+    exit_after_play: bool,
+) -> bool {
+    selected_count == 1 && terminal && !download && !exit_after_play
 }
 
 fn adjacent_episode(episodes: &[String], current: &str, delta: isize) -> Result<String> {
@@ -642,4 +695,43 @@ fn clean_title(value: &str) -> String {
 }
 fn dialog_error(error: dialoguer::Error) -> AniError {
     AniError::Input(format!("interactive selection failed: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playback_actions_hide_unavailable_episode_directions() {
+        let episodes = vec!["1".into(), "2".into(), "3".into()];
+        assert_eq!(
+            playback_actions(&episodes, "1"),
+            vec![
+                PlaybackAction::Next,
+                PlaybackAction::Replay,
+                PlaybackAction::Select,
+                PlaybackAction::ChangeQuality,
+                PlaybackAction::Quit,
+            ]
+        );
+        assert_eq!(
+            playback_actions(&episodes, "3"),
+            vec![
+                PlaybackAction::Replay,
+                PlaybackAction::Previous,
+                PlaybackAction::Select,
+                PlaybackAction::ChangeQuality,
+                PlaybackAction::Quit,
+            ]
+        );
+    }
+
+    #[test]
+    fn playback_controls_remain_available_for_one_interactive_episode() {
+        assert!(should_offer_playback_controls(1, true, false, false));
+        assert!(!should_offer_playback_controls(2, true, false, false));
+        assert!(!should_offer_playback_controls(1, false, false, false));
+        assert!(!should_offer_playback_controls(1, true, true, false));
+        assert!(!should_offer_playback_controls(1, true, false, true));
+    }
 }
