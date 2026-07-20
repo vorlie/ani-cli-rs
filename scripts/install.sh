@@ -21,15 +21,14 @@ for command_name in curl tar; do
 done
 
 release_json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ani-cli-rs-installer" "$api_url")
-version=$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -n 1)
+version=$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
 version_number=${version#v}
 asset_name="ani-cli-rs-$version_number-$target.tar.gz"
-asset_urls=$(printf '%s\n' "$release_json" | sed -n 's/.*"browser_download_url": "\([^"]*\)".*/\1/p')
-asset_url=$(printf '%s\n' "$asset_urls" | grep -F "/$asset_name" | grep -v '\.sha256$' | head -n 1 || true)
-checksum_url=$(printf '%s\n' "$asset_urls" | grep -F "/$asset_name.sha256" | head -n 1 || true)
+asset_url="https://github.com/$repository/releases/download/$version/$asset_name"
+checksum_url="$asset_url.sha256"
 
-if [ -z "$version" ] || [ -z "$asset_url" ] || [ -z "$checksum_url" ]; then
-    echo "The latest release does not contain $asset_name and its checksum." >&2
+if [ -z "$version" ]; then
+    echo "Could not determine the latest ani-cli-rs release version." >&2
     exit 1
 fi
 

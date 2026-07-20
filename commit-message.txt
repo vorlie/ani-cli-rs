@@ -1,6 +1,5 @@
-feat: introduce ani-cli-rs 0.1.0
+fix(installer): handle compact GitHub release JSON
 
-- implement the current AllAnime crypto and provider workflow
-- add ani-cli-compatible playback, downloads, history, and CLI flags
-- add scriptable JSON commands and a reusable scraper library
-- package standalone Windows and Linux releases with installers
+- parse the latest tag regardless of JSON whitespace formatting
+- construct deterministic archive and checksum download URLs
+- keep the existing 0.1.0 Linux release assets installable
