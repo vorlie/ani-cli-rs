@@ -1,47 +1,57 @@
-# ani-cli-rs 0.4.0
+# ani-cli-rs 0.5.0
 
-`0.4.0` focuses on faster, more resilient downloads and better project support resources. aria2c can now accelerate direct and HLS transfers, downloader failures proceed through a real fallback chain, and the repository includes structured issue reporting, contribution guidance, and security documentation.
+`0.5.0` adds a built-in release checker and installer handoff while improving aria2 reliability for Mp4Upload downloads. Users can now check for updates or start the existing checksum-verifying installer directly from ani-cli-rs.
 
-There are no intentional breaking changes to existing CLI flags, environment variables, history files, library APIs, or JSON subcommands.
+There are no intentional breaking changes to existing playback, download, history, library, or JSON interfaces.
 
 ## Highlights
 
-### Faster parallel downloads with aria2
+### Built-in update checker
 
-- Direct media downloads prefer aria2c when it is installed, using up to 16 connections and resumable partial files.
-- HLS downloads let yt-dlp delegate transfers to aria2c while retaining 16 concurrent fragments.
-- Provider-specific Referer, Origin, and additional request headers are passed to every downloader.
-- A failed aria2c transfer falls back to the built-in Rust downloader for direct media.
-- HLS failures retry through native yt-dlp and then FFmpeg instead of stopping after the first installed tool fails.
-- Existing installations without aria2c continue to work without configuration changes.
+- Added Bash-compatible `-U/--update` to check for and install the latest release.
+- Added `ani-cli-rs update` for the same scriptable workflow.
+- Added `ani-cli-rs update --check` to report availability without changing the installation.
+- Release versions are compared numerically, so versions such as `0.10.0` correctly sort after `0.9.0`.
+- Installer scripts are downloaded from the exact GitHub release tag rather than the mutable `master` branch.
+- Release tags are validated before being used to construct an installer URL.
+- The existing installers continue to download the platform archive and verify its published SHA-256 checksum.
 
-Download acceleration depends on the media server supporting parallel range requests. When a server limits connections or bandwidth, aria2c may perform similarly to the existing downloaders.
+### Safe Windows replacement
 
-### GitHub community and security resources
+- Windows updates are handed to PowerShell and continue after the running ani-cli-rs process exits, allowing the executable to be replaced safely.
+- Temporary updater scripts remove themselves after a successful Windows installation.
+- `ANI_CLI_RS_INSTALL_DIR` now overrides the installation directory on Windows as well as Unix.
+- The Windows installer retains its explicit `-InstallDirectory` option.
+- Updating does not require administrator privileges when using the default user-local installation directory.
 
-- Added structured forms for application bugs, provider breakage, and feature requests.
-- Added a pull-request template with formatting, linting, testing, scraper-fixture, and privacy checks.
-- Added contribution guidance for deterministic scraper tests, platform-safe process handling, and focused commits.
-- Added a security policy directing exploitable reports to GitHub's private vulnerability-reporting flow.
-- Added dedicated provider diagnostics prompts while warning reporters not to publish signed media URLs, credentials, or private paths.
+Official macOS release binaries remain unavailable. `update --check` works on macOS, but installation directs users to rebuild from source.
 
-### Documentation and release verification
+### Mp4Upload download reliability
 
-- Added README quick links for installation, usage, diagnostics, contribution, security, and roadmap documentation.
-- Documented why unsigned Windows builds and the AllAnime crypto/bootstrap workflow may trigger heuristic antivirus warnings.
-- Added manual SHA-256 verification instructions and clarified what a matching checksum does and does not establish.
-- Corrected the deliberately excluded feature list now that AnimeSchedule lookup is implemented.
+- Mp4Upload direct downloads now use four aria2 connections instead of sixteen.
+- Other compatible direct providers retain the higher sixteen-connection limit.
+- The lower Mp4Upload limit avoids repeated `403 Forbidden` responses from excess range requests while retaining parallel download performance.
+- aria2 console logging is reduced and its final download-results table is hidden, while the live progress readout remains enabled.
 
-## Download behavior
+## Usage
 
-When aria2c is installed and available in `PATH`, the fallback order is:
+Check without installing:
 
-```text
-Direct media: aria2c → built-in resumable Rust downloader
-HLS:         yt-dlp + aria2c → native yt-dlp → FFmpeg
+```console
+ani-cli-rs update --check
 ```
 
-No new downloader is mandatory. Users who want parallel transfers can install aria2 through their operating system's package manager.
+Install the latest release:
+
+```console
+ani-cli-rs update
+```
+
+The Bash-compatible form is also available:
+
+```console
+ani-cli-rs -U
+```
 
 ## Installation
 
@@ -59,25 +69,26 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 .\install.ps1
 ```
 
-The installers verify the downloaded archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
+The installers verify the downloaded release archive against its published SHA-256 checksum before installation.
 
 ## Release asset checklist
 
 Upload each archive together with its generated `.sha256` file:
 
-- `ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip`
-- `ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip.sha256`
-- `ani-cli-rs-0.4.0-x86_64-unknown-linux-musl.tar.gz`
-- `ani-cli-rs-0.4.0-x86_64-unknown-linux-musl.tar.gz.sha256`
+- `ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip`
+- `ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip.sha256`
+- `ani-cli-rs-0.5.0-x86_64-unknown-linux-musl.tar.gz`
+- `ani-cli-rs-0.5.0-x86_64-unknown-linux-musl.tar.gz.sha256`
 
 Official macOS binaries are not published. macOS users may build from source with the included Cargo aliases.
 
 ## Verification
 
-- 30 deterministic Rust tests pass.
+- 35 deterministic Rust tests pass.
 - `cargo fmt --check` passes.
 - `cargo check --all-targets` passes.
 - `cargo clippy --all-targets -- -D warnings` passes.
-- aria2c argument construction and yt-dlp delegation are covered by unit tests.
+- The GitHub release check was smoke-tested against the live `vorlie/ani-cli-rs` repository.
+- PowerShell installer syntax and the delayed Windows replacement path were validated.
 
-**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.3.0...0.4.0
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.4.0...0.5.0
