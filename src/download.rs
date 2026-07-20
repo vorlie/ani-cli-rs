@@ -181,14 +181,18 @@ fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
         .file_name()
         .unwrap_or(partial.as_os_str())
         .to_string_lossy();
+    let connections = aria2_connection_count(stream);
     let mut args = vec![
         "--continue=true".into(),
-        "--max-connection-per-server=16".into(),
-        "--split=16".into(),
+        format!("--max-connection-per-server={connections}"),
+        format!("--split={connections}"),
         "--min-split-size=1M".into(),
         "--file-allocation=none".into(),
         "--auto-file-renaming=false".into(),
         "--allow-overwrite=true".into(),
+        "--console-log-level=error".into(),
+        "--download-result=hide".into(),
+        "--summary-interval=1".into(),
         format!("--dir={}", directory.to_string_lossy()),
         format!("--out={filename}"),
     ];
@@ -207,6 +211,19 @@ fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
     );
     args.push(stream.url.clone());
     args
+}
+
+fn aria2_connection_count(stream: &StreamLink) -> u8 {
+    let provider_is_mp4upload = stream.provider.to_ascii_lowercase().contains("mp4upload");
+    let host_is_mp4upload = url::Url::parse(&stream.url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| host == "mp4upload.com" || host.ends_with(".mp4upload.com"));
+    if provider_is_mp4upload || host_is_mp4upload {
+        4
+    } else {
+        16
+    }
 }
 
 async fn download_direct(stream: &StreamLink, target: &Path) -> Result<()> {
@@ -472,6 +489,8 @@ mod tests {
         assert!(args.contains(&"--continue=true".into()));
         assert!(args.contains(&"--max-connection-per-server=16".into()));
         assert!(args.contains(&"--split=16".into()));
+        assert!(args.contains(&"--console-log-level=error".into()));
+        assert!(args.contains(&"--download-result=hide".into()));
         assert!(args.contains(&"--referer=https://example.com/watch".into()));
         assert!(args.contains(&"--header=Origin: https://example.com".into()));
         assert!(args.contains(&"--header=X-Test: value".into()));
@@ -479,6 +498,18 @@ mod tests {
             args.last().map(String::as_str),
             Some("https://media.example/video")
         );
+    }
+
+    #[test]
+    fn aria2_limits_mp4upload_parallel_connections() {
+        let mut stream = test_stream(false);
+        stream.url = "https://a4.mp4upload.com:183/d/token/video.mp4".into();
+        stream.provider = "Mp4Upload".into();
+
+        let args = aria2_args(&stream, Path::new("episode.mp4.part"));
+
+        assert!(args.contains(&"--max-connection-per-server=4".into()));
+        assert!(args.contains(&"--split=4".into()));
     }
 
     #[test]

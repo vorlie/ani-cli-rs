@@ -97,7 +97,7 @@ The two hashes must match. A matching checksum confirms that the archive is iden
 
 Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay.
 
-For faster downloads, install `aria2c` through your operating system's package manager and ensure it is available in `PATH`. Direct media then uses up to 16 parallel connections with resume support. HLS downloads use yt-dlp with aria2c as its external downloader while retaining yt-dlp's 16 concurrent fragment setting. If aria2c fails or is unavailable, direct media falls back to the built-in resumable `.part` downloader; HLS retries with yt-dlp alone and then FFmpeg. Each available downloader reports its own size, speed, percentage, and ETA information.
+For faster downloads, install `aria2c` through your operating system's package manager and ensure it is available in `PATH`. Direct media then uses up to 16 parallel connections with resume support; providers known to enforce lower connection limits, such as Mp4Upload, use a safer limit automatically. HLS downloads use yt-dlp with aria2c as its external downloader while retaining yt-dlp's 16 concurrent fragment setting. If aria2c fails or is unavailable, direct media falls back to the built-in resumable `.part` downloader; HLS retries with yt-dlp alone and then FFmpeg. Each available downloader reports its own size, speed, percentage, and ETA information.
 
 ## Compatible workflow
 
