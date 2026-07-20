@@ -1,0 +1,39 @@
+param(
+    [string]$Target = "x86_64-pc-windows-msvc"
+)
+
+$ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$metadata = cargo metadata --no-deps --format-version 1 --manifest-path (Join-Path $projectRoot "Cargo.toml") | ConvertFrom-Json
+$version = $metadata.packages[0].version
+$binaryName = if ($Target -like "*windows*") { "ani-cli-rs.exe" } else { "ani-cli-rs" }
+$binaryPath = Join-Path $projectRoot "target/$Target/release/$binaryName"
+$packageName = "ani-cli-rs-$version-$Target"
+$packageDirectory = Join-Path $projectRoot "dist/$packageName"
+$archivePath = Join-Path $projectRoot "dist/$packageName.zip"
+$licenseCandidates = @(
+    (Join-Path $projectRoot "LICENSE"),
+    (Join-Path $projectRoot "../../LICENSE")
+)
+$licensePath = $licenseCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+if (-not $licensePath) {
+    throw "Could not find LICENSE in the project or repository root."
+}
+
+cargo build --locked --release --target $Target --manifest-path (Join-Path $projectRoot "Cargo.toml")
+if ($LASTEXITCODE -ne 0) {
+    throw "Cargo build failed for $Target."
+}
+
+New-Item -ItemType Directory -Force $packageDirectory | Out-Null
+Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $packageDirectory $binaryName) -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot "README.md") -Destination (Join-Path $packageDirectory "README.md") -Force
+Copy-Item -LiteralPath $licensePath -Destination (Join-Path $packageDirectory "LICENSE") -Force
+
+Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath -Force
+$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksumPath = "$archivePath.sha256"
+Set-Content -LiteralPath $checksumPath -Value "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))" -Encoding ascii
+Write-Host "Created $archivePath and $checksumPath"
+

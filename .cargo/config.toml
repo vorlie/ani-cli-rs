@@ -1,0 +1,6 @@
+[alias]
+release-windows = "build --locked --release --target x86_64-pc-windows-msvc"
+release-linux = "build --locked --release --target x86_64-unknown-linux-musl"
+release-linux-arm64 = "build --locked --release --target aarch64-unknown-linux-musl"
+release-macos = "build --locked --release --target x86_64-apple-darwin"
+release-macos-arm64 = "build --locked --release --target aarch64-apple-darwin"

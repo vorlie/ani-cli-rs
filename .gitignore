@@ -1,0 +1,17 @@
+# Cargo build output
+target/
+
+# Packaged standalone releases
+dist/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local logs and environment overrides
+*.log
+.env
+.env.*
+
