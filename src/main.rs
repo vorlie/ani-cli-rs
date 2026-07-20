@@ -61,7 +61,7 @@ struct Cli {
     #[arg(long, env = "ANI_CLI_EXIT_AFTER_PLAY")]
     exit_after_play: bool,
     /// Anime title to search for; omitted titles are prompted interactively.
-    #[arg(value_name = "QUERY", trailing_var_arg = true)]
+    #[arg(value_name = "QUERY")]
     query: Vec<String>,
 }
 
@@ -700,6 +700,45 @@ fn dialog_error(error: dialoguer::Error) -> AniError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_options_can_follow_the_query() {
+        let cli = Cli::try_parse_from([
+            "ani-cli-rs",
+            "cowboy",
+            "bebop",
+            "--dub",
+            "-q",
+            "1080p",
+            "-e",
+            "2-4",
+        ])
+        .expect("legacy arguments should parse");
+
+        assert_eq!(cli.query, ["cowboy", "bebop"]);
+        assert!(cli.dub);
+        assert_eq!(cli.quality, "1080p");
+        assert_eq!(cli.episode.as_deref(), Some("2-4"));
+    }
+
+    #[test]
+    fn legacy_options_can_be_interspersed_with_query_words() {
+        let cli = Cli::try_parse_from([
+            "ani-cli-rs",
+            "--allow-adult",
+            "cyberpunk",
+            "-q",
+            "720p",
+            "edgerunners",
+            "--no-detach",
+        ])
+        .expect("interspersed legacy arguments should parse");
+
+        assert_eq!(cli.query, ["cyberpunk", "edgerunners"]);
+        assert!(cli.allow_adult);
+        assert!(cli.no_detach);
+        assert_eq!(cli.quality, "720p");
+    }
 
     #[test]
     fn playback_actions_hide_unavailable_episode_directions() {
