@@ -2,6 +2,13 @@
 
 A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) focused on the current AllAnime workflow. It provides both the distinctly named `ani-cli-rs` executable and an `ani_cli` library, allowing it to coexist with the Bash `ani-cli`. Derived work is licensed under GPL-3.0-only; see the repository-level `LICENSE`.
 
+## Quick links
+
+- [Build](#build) · [Release packaging](#target-specific-and-standalone-releases) · [Install](#install-from-github-releases)
+- [Antivirus and verification](#antivirus-and-release-verification) · [Compatible workflow](#compatible-workflow) · [Keyboard navigation](#keyboard-navigation)
+- [Scriptable commands](#scriptable-commands) · [Library API](#library) · [Diagnostics and tests](#diagnostics-and-tests)
+- [Deliberately excluded features](#deliberately-excluded-from-v1)
+
 ## Build
 
 ```console
@@ -68,6 +75,24 @@ Remove-Item .\install.ps1
 The Unix installer uses `~/.local/bin` and updates `~/.profile` only when needed. The Windows installer uses `%LOCALAPPDATA%\Programs\ani-cli-rs\bin` and updates the user-level `PATH`. Override these with `ANI_CLI_RS_INSTALL_DIR` on Unix or `-InstallDirectory` on Windows.
 
 Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
+
+### Antivirus and release verification
+
+Official Windows binaries are currently unsigned and may trigger Microsoft SmartScreen or heuristic antivirus detections. VirusTotal's behavior report for older releases has also described parts of the executable as obfuscated. A detection should be investigated rather than dismissed automatically, but that label can be caused by behavior that is expected and visible in this repository:
+
+- The AllAnime client performs AES-GCM, AES-CTR, XOR, SHA-256, and Base64 operations to construct and decode provider requests.
+- It downloads and scans AllAnime/Mkissa JavaScript bootstrap data because the provider changes its runtime crypto material.
+- It resolves media URLs and starts external programs such as mpv, VLC, Syncplay, yt-dlp, or FFmpeg.
+- The optional installer adds a user-local binary directory to the user's `PATH`; the application itself does not require administrator privileges.
+
+Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
+
+```powershell
+(Get-FileHash .\ani-cli-rs-0.3.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\ani-cli-rs-0.3.0-x86_64-pc-windows-msvc.zip.sha256
+```
+
+The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.
 
 Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay. HLS downloads use `yt-dlp`, falling back to `ffmpeg`; direct MP4 downloads are handled internally with resumable `.part` files. Downloads report transferred size, speed, and ETA when available.
 
@@ -152,4 +177,4 @@ Live endpoints are intentionally not part of deterministic test runs because All
 
 ## Deliberately excluded from v1
 
-Self-update, rofi/dmenu, Android/Termux and iSH adapters, intro skipping, system-journal logging, and the anime-schedule next-release lookup are outside desktop-core parity.
+Self-update, rofi/dmenu, Android/Termux and iSH adapters, intro skipping, and system-journal logging are outside desktop-core parity.
