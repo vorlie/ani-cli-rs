@@ -10,6 +10,7 @@ fn help_lists_legacy_and_scriptable_interfaces() {
         .success()
         .stdout(predicate::str::contains("--continue"))
         .stdout(predicate::str::contains("--allow-adult"))
+        .stdout(predicate::str::contains("--update"))
         .stdout(predicate::str::contains("refresh-cipher-map"));
 }
 

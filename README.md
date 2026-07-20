@@ -73,7 +73,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 Remove-Item .\install.ps1
 ```
 
-The Unix installer uses `~/.local/bin` and updates `~/.profile` only when needed. The Windows installer uses `%LOCALAPPDATA%\Programs\ani-cli-rs\bin` and updates the user-level `PATH`. Override these with `ANI_CLI_RS_INSTALL_DIR` on Unix or `-InstallDirectory` on Windows.
+The Unix installer uses `~/.local/bin` and updates `~/.profile` only when needed. The Windows installer uses `%LOCALAPPDATA%\Programs\ani-cli-rs\bin` and updates the user-level `PATH`. Override either installer with `ANI_CLI_RS_INSTALL_DIR`; the Windows script also accepts `-InstallDirectory`.
 
 Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
 
@@ -111,7 +111,7 @@ ani-cli-rs --download -e 1 "anime title"
 ani-cli-rs --delete
 ```
 
-Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `-N/--nextep-countdown`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
+Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `-N/--nextep-countdown`, `-U/--update`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
 
 Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_MULTI_SELECTION`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
 
@@ -142,9 +142,13 @@ ani-cli-rs play SHOW_ID 1 --title "Frieren" --no-detach
 ani-cli-rs download SHOW_ID 1 --output ./downloads
 ani-cli-rs debug --refresh
 ani-cli-rs refresh-cipher-map
+ani-cli-rs update --check
+ani-cli-rs update
 ```
 
 `debug` reports dynamic/fallback crypto bootstrap material. `refresh-cipher-map` validates and caches the URL decoder from the latest upstream ani-cli release. Set `RUST_LOG=warn` or `RUST_LOG=debug` for scraper diagnostics.
+
+`-U/--update` and `update` check GitHub Releases, download the installer from the exact release tag, and use the existing checksum-verifying installation flow. `update --check` only reports whether a newer release exists. On Windows, installation continues after the current executable exits so it can be replaced safely.
 
 ## Library
 
@@ -180,4 +184,4 @@ Live endpoints are intentionally not part of deterministic test runs because All
 
 ## Deliberately excluded from v1
 
-Self-update, rofi/dmenu, Android/Termux and iSH adapters, intro skipping, and system-journal logging are outside desktop-core parity.
+rofi/dmenu, Android/Termux and iSH adapters, intro skipping, and system-journal logging are outside desktop-core parity.

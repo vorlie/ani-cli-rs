@@ -9,6 +9,8 @@ use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
 
+mod updater;
+
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime.\n\nThe interactive workflow searches the subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
 const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
@@ -66,6 +68,9 @@ struct Cli {
     /// Display the next scheduled raw and subtitled releases, then exit.
     #[arg(short = 'N', long = "nextep-countdown")]
     next_episode_countdown: bool,
+    /// Check for and install the latest ani-cli-rs release.
+    #[arg(short = 'U', long)]
+    update: bool,
     /// Anime title to search for; omitted titles are prompted interactively.
     #[arg(value_name = "QUERY")]
     query: Vec<String>,
@@ -91,6 +96,12 @@ enum Commands {
     },
     /// Download, validate, and cache the latest upstream URL cipher map.
     RefreshCipherMap,
+    /// Check for or install the latest ani-cli-rs release.
+    Update {
+        /// Only report whether an update is available.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -177,6 +188,12 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    if cli.update {
+        return updater::run(false).await;
+    }
+    if let Some(Commands::Update { check }) = cli.command.as_ref() {
+        return updater::run(*check).await;
+    }
     if cli.next_episode_countdown {
         let query = if cli.query.is_empty() {
             if !std::io::stdin().is_terminal() {
@@ -469,6 +486,7 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&client.refresh_cipher_map().await?)?
         ),
+        Commands::Update { .. } => unreachable!("update commands are handled before client setup"),
     }
     Ok(())
 }
@@ -899,6 +917,15 @@ mod tests {
         assert!(cli.allow_adult);
         assert!(cli.no_detach);
         assert_eq!(cli.quality, "720p");
+    }
+
+    #[test]
+    fn legacy_update_flag_can_follow_the_query() {
+        let cli = Cli::try_parse_from(["ani-cli-rs", "frieren", "-U"])
+            .expect("update flag should parse after a query");
+
+        assert!(cli.update);
+        assert_eq!(cli.query, ["frieren"]);
     }
 
     #[test]

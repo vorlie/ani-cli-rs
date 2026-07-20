@@ -28,6 +28,8 @@ pub enum AniError {
     Download(String),
     #[error("history operation failed: {0}")]
     History(String),
+    #[error("update failed: {0}")]
+    Update(String),
     #[error("invalid input: {0}")]
     Input(String),
     #[error("I/O error: {0}")]

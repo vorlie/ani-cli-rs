@@ -1,9 +1,12 @@
 param(
-    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA "Programs\ani-cli-rs\bin"),
+    [string]$InstallDirectory = $(if ($env:ANI_CLI_RS_INSTALL_DIR) { $env:ANI_CLI_RS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\ani-cli-rs\bin" }),
     [switch]$NoPathUpdate
 )
 
 $ErrorActionPreference = "Stop"
+if ($env:ANI_CLI_RS_WAIT_FOR_PID) {
+    Wait-Process -Id ([int]$env:ANI_CLI_RS_WAIT_FOR_PID) -ErrorAction SilentlyContinue
+}
 $repository = "vorlie/ani-cli-rs"
 $target = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
     "X64" { "x86_64-pc-windows-msvc" }
@@ -57,3 +60,6 @@ if (-not $NoPathUpdate) {
 
 Write-Host "Installed ani-cli-rs $($release.tag_name) to $InstallDirectory\ani-cli-rs.exe"
 
+if ($env:ANI_CLI_RS_DELETE_INSTALLER -eq "1" -and $PSCommandPath) {
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
