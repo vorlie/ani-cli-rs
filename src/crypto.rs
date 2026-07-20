@@ -9,14 +9,17 @@ use sha2::{Digest, Sha256};
 
 use crate::{AniError, Result};
 
-pub(crate) const EPOCH: u64 = 4128;
-pub(crate) const BUILD_ID: &str = "12";
-pub(crate) const LEGACY_BUILD_ID: &str = "9";
+pub(crate) const EPOCH: u64 = 6884;
+pub(crate) const BUILD_ID: &str = "48";
+pub(crate) const LEGACY_EPOCH: u64 = 4128;
+pub(crate) const LEGACY_BUILD_IDS: [&str; 2] = ["12", "9"];
 pub(crate) const QUERY_HASH: &str =
     "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
 pub(crate) const STATIC_PART_A: &str =
-    "b1a9a4d051988f1b1b12dbb747439d9bd64b09ea17835600a7eaa4de87c1ad87";
-pub(crate) const STATIC_PART_B: &str = "k7DLdv5SGiuEyGUtcncl5wQOR7r4aenLfDV3AOBKlAU=";
+    "31d8a1854219df5b4b32ce24763844b1a931cf58676389c1cc3517724841e6b2";
+pub(crate) const STATIC_PART_B: &str = "wpcGkKCMVNdVjqDeOzDefCYootPktz/h2bPXfsITAho=";
+const LEGACY_PART_A: &str = "b1a9a4d051988f1b1b12dbb747439d9bd64b09ea17835600a7eaa4de87c1ad87";
+const LEGACY_PART_B: &str = "k7DLdv5SGiuEyGUtcncl5wQOR7r4aenLfDV3AOBKlAU=";
 const RESPONSE_FALLBACK_SECRET: &str = "Xot36i3lK3";
 
 #[derive(Clone, Debug)]
@@ -70,7 +73,7 @@ pub(crate) fn fallback_material(error: Option<String>) -> CryptoMaterial {
         epoch: EPOCH,
         build_id: BUILD_ID.into(),
         key: xor_key(STATIC_PART_A, STATIC_PART_B).expect("bundled AllAnime key must be valid"),
-        legacy_ctr: true,
+        legacy_ctr: false,
         source: "fallback".into(),
         part_a: STATIC_PART_A.into(),
         part_b: STATIC_PART_B.into(),
@@ -79,6 +82,25 @@ pub(crate) fn fallback_material(error: Option<String>) -> CryptoMaterial {
         fetched_at_ms,
         expires_at_ms: fetched_at_ms + 5 * 60_000,
         error,
+    }
+}
+
+pub(crate) fn legacy_fallback_material(build_id: &str) -> CryptoMaterial {
+    let fetched_at_ms = now_ms();
+    CryptoMaterial {
+        epoch: LEGACY_EPOCH,
+        build_id: build_id.into(),
+        key: xor_key(LEGACY_PART_A, LEGACY_PART_B)
+            .expect("bundled legacy AllAnime key must be valid"),
+        legacy_ctr: true,
+        source: "fallback-legacy".into(),
+        part_a: LEGACY_PART_A.into(),
+        part_b: LEGACY_PART_B.into(),
+        app_js_url: None,
+        api_url: None,
+        fetched_at_ms,
+        expires_at_ms: fetched_at_ms + 5 * 60_000,
+        error: None,
     }
 }
 
@@ -184,6 +206,14 @@ mod tests {
     fn bundled_key_matches_upstream() {
         assert_eq!(
             hex::encode(xor_key(STATIC_PART_A, STATIC_PART_B).unwrap()),
+            "f34fa715e2958b8c1ebc6efa4d089acd8f196d8b83d4b6201586c00c8a52e4a8"
+        );
+    }
+
+    #[test]
+    fn bundled_legacy_key_remains_available() {
+        assert_eq!(
+            hex::encode(legacy_fallback_material("12").key),
             "22196fa6afca95309fdabe9a3534b87cd2454e50efeabfcbdbdfd3de678b3982"
         );
     }

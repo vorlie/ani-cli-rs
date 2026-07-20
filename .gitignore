@@ -12,6 +12,6 @@ Thumbs.db
 
 # Local logs and environment overrides
 *.log
+aniplay-allanime-debug-*.json
 .env
 .env.*
-

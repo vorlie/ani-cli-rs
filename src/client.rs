@@ -19,8 +19,8 @@ use crate::{
     StreamLink, TranslationType,
     cipher::{builtin_cipher_map, decode_url, load_cached, parse_upstream_cipher_map, save_cached},
     crypto::{
-        BUILD_ID, CryptoMaterial, LEGACY_BUILD_ID, QUERY_HASH, aa_req, decode_episode_response,
-        episode_sources, fallback_material, now_ms, query_hash, xor_key,
+        CryptoMaterial, LEGACY_BUILD_IDS, QUERY_HASH, aa_req, decode_episode_response,
+        episode_sources, fallback_material, legacy_fallback_material, now_ms, query_hash, xor_key,
     },
     models::{sort_episodes, sort_streams},
 };
@@ -402,9 +402,9 @@ impl AllAnimeClient {
             next.source = "dynamic-next-epoch".into();
             candidates.push(next);
         }
-        for build in [BUILD_ID, LEGACY_BUILD_ID] {
-            let mut fallback = fallback_material(None);
-            fallback.build_id = build.into();
+        let fallback_candidates = std::iter::once(fallback_material(None))
+            .chain(LEGACY_BUILD_IDS.into_iter().map(legacy_fallback_material));
+        for fallback in fallback_candidates {
             if !candidates.iter().any(|m| {
                 m.epoch == fallback.epoch
                     && m.build_id == fallback.build_id
@@ -446,12 +446,9 @@ impl AllAnimeClient {
                             retry_after_seconds,
                         });
                     }
-                    last_error = error;
                 }
             }
-        }
-        for material in &materials {
-            let api_url = material.api_url.as_deref().unwrap_or(&self.inner.api_url);
+
             let body = json!({"variables":variables,"query":EPISODE_GQL,"extensions":{"aaReq":aa_req(material, &full_query_hash, now_ms())?}});
             let response = self
                 .common_headers(self.inner.http.post(api_url))
