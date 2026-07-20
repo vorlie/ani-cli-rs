@@ -7,7 +7,7 @@ use ani_cli::{
 };
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime.\n\nThe interactive workflow searches the subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. HLS downloads prefer yt-dlp and fall back to ffmpeg, while direct media downloads are handled internally.";
 
@@ -63,6 +63,9 @@ struct Cli {
     /// Return the attached player's exit status after playback.
     #[arg(long, env = "ANI_CLI_EXIT_AFTER_PLAY")]
     exit_after_play: bool,
+    /// Display the next scheduled raw and subtitled releases, then exit.
+    #[arg(short = 'N', long = "nextep-countdown")]
+    next_episode_countdown: bool,
     /// Anime title to search for; omitted titles are prompted interactively.
     #[arg(value_name = "QUERY")]
     query: Vec<String>,
@@ -174,6 +177,23 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    if cli.next_episode_countdown {
+        let query = if cli.query.is_empty() {
+            if !std::io::stdin().is_terminal() {
+                return Err(AniError::Input(
+                    "--nextep-countdown requires an anime query".into(),
+                ));
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Search anime release schedule")
+                .interact_text()
+                .map_err(dialog_error)?
+        } else {
+            cli.query.join(" ")
+        };
+        return display_next_episode_schedule(&query).await;
+    }
+
     let client = AllAnimeClient::new()?;
     if let Some(command) = cli.command {
         return run_command(&client, command).await;
@@ -279,6 +299,88 @@ async fn run(cli: Cli) -> Result<()> {
         interactive_after_play(&context, &selected[0], &cli.quality).await?;
     }
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct ScheduleSearchResponse {
+    #[serde(default)]
+    anime: Vec<ScheduleAnime>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleAnime {
+    title: String,
+    status: String,
+    jpn_time: Option<String>,
+    sub_time: Option<String>,
+    #[serde(default)]
+    names: ScheduleNames,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ScheduleNames {
+    english: Option<String>,
+    native: Option<String>,
+}
+
+async fn display_next_episode_schedule(query: &str) -> Result<()> {
+    let response = reqwest::Client::builder()
+        .user_agent(concat!("ani-cli-rs/", env!("CARGO_PKG_VERSION")))
+        .build()?
+        .get("https://animeschedule.net/api/v3/anime")
+        .query(&[("q", query)])
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<ScheduleSearchResponse>()
+        .await?;
+    if response.anime.is_empty() {
+        return Err(AniError::Unavailable(
+            "no AnimeSchedule results found".into(),
+        ));
+    }
+    for anime in &response.anime {
+        for line in schedule_lines(anime) {
+            println!("{line}");
+        }
+        println!("---");
+    }
+    Ok(())
+}
+
+fn schedule_lines(anime: &ScheduleAnime) -> Vec<String> {
+    let mut lines = Vec::with_capacity(5);
+    if let Some(title) = anime.names.english.as_deref() {
+        lines.push(format!("English Title: {title}"));
+    } else {
+        lines.push(format!("English Title: {}", anime.title));
+    }
+    if let Some(title) = anime.names.native.as_deref() {
+        lines.push(format!("Japanese Title: {title}"));
+    }
+    if anime.status != "Finished" {
+        if let Some(time) = anime
+            .jpn_time
+            .as_deref()
+            .filter(|time| valid_release_time(time))
+        {
+            lines.push(format!("Next Raw Release: {time}"));
+        }
+        if let Some(time) = anime
+            .sub_time
+            .as_deref()
+            .filter(|time| valid_release_time(time))
+        {
+            lines.push(format!("Next Sub Release: {time}"));
+        }
+    }
+    lines.push(format!("Status:  {}", anime.status));
+    lines
+}
+
+fn valid_release_time(time: &str) -> bool {
+    !(time.starts_with("0001-") || time.starts_with("0002-"))
 }
 
 async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
@@ -808,6 +910,42 @@ mod tests {
             Some("1 2.5 10")
         );
         assert_eq!(multiple_episode_selection(&episodes, &[]), None);
+    }
+
+    #[test]
+    fn next_episode_schedule_formats_ongoing_and_finished_titles() {
+        let ongoing = ScheduleAnime {
+            title: "Example".into(),
+            status: "Ongoing".into(),
+            jpn_time: Some("2026-07-24T15:00:00Z".into()),
+            sub_time: Some("2026-07-24T16:00:00Z".into()),
+            names: ScheduleNames {
+                english: Some("Example Anime".into()),
+                native: Some("例".into()),
+            },
+        };
+        assert_eq!(
+            schedule_lines(&ongoing),
+            [
+                "English Title: Example Anime",
+                "Japanese Title: 例",
+                "Next Raw Release: 2026-07-24T15:00:00Z",
+                "Next Sub Release: 2026-07-24T16:00:00Z",
+                "Status:  Ongoing",
+            ]
+        );
+
+        let finished = ScheduleAnime {
+            title: "Old Anime".into(),
+            status: "Finished".into(),
+            jpn_time: Some("2020-01-01T00:00:00Z".into()),
+            sub_time: Some("0001-01-01T00:00:00Z".into()),
+            names: ScheduleNames::default(),
+        };
+        assert_eq!(
+            schedule_lines(&finished),
+            ["English Title: Old Anime", "Status:  Finished"]
+        );
     }
 
     #[test]

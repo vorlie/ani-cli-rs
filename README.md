@@ -83,11 +83,13 @@ ani-cli-rs --download -e 1 "anime title"
 ani-cli-rs --delete
 ```
 
-Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
+Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `-N/--nextep-countdown`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
 
 Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_MULTI_SELECTION`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
 
 History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `ANI_CLI_HIST_DIR` to share an existing history directory.
+
+`-N/--nextep-countdown QUERY` matches Bash ani-cli's release-schedule mode: it displays AnimeSchedule's next raw and subtitled release timestamps and exits without contacting AllAnime.
 
 After a single episode is launched from an interactive terminal, ani-cli-rs keeps the session open with controls for next, replay, previous, episode selection, and quality changes. This menu is also shown when the episode was supplied through `-e/--episode`; use `--exit-after-play` to skip it.
 
