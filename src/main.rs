@@ -6,12 +6,12 @@ use ani_cli::{
     download_stream, expand_episode_selection,
 };
 use clap::{Args, Parser, Subcommand};
-use dialoguer::{FuzzySelect, Input, Select, theme::ColorfulTheme};
+use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::Serialize;
 
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime.\n\nThe interactive workflow searches the subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. HLS downloads prefer yt-dlp and fall back to ffmpeg, while direct media downloads are handled internally.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select an action\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_NO_DETACH,\n  ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -48,6 +48,9 @@ struct Cli {
     /// Select one episode, whitespace-separated episodes, or a range such as 2-5.
     #[arg(short = 'e', short_alias = 'r', long = "episode", alias = "range")]
     episode: Option<String>,
+    /// Open the interactive episode picker in multi-selection mode.
+    #[arg(long, env = "ANI_CLI_MULTI_SELECTION")]
+    multi_selection: bool,
     /// Search and play the dubbed catalog instead of subtitles.
     #[arg(long)]
     dub: bool,
@@ -236,7 +239,8 @@ async fn run(cli: Cli) -> Result<()> {
                 let selection = if let Some(selection) = cli.episode.clone() {
                     selection
                 } else {
-                    let Some(selection) = select_episode(&episodes)? else {
+                    let Some(selection) = select_initial_episodes(&episodes, cli.multi_selection)?
+                    else {
                         if results.len() == 1 {
                             continue 'search;
                         }
@@ -431,6 +435,61 @@ fn select_episode(episodes: &[String]) -> Result<Option<String>> {
         .interact_opt()
         .map_err(dialog_error)?;
     Ok(index.and_then(|index| index.checked_sub(1).map(|index| episodes[index].clone())))
+}
+
+fn select_initial_episodes(episodes: &[String], multi: bool) -> Result<Option<String>> {
+    if episodes.is_empty() {
+        return Err(AniError::Unavailable(
+            "show has no episodes in this translation".into(),
+        ));
+    }
+    if multi {
+        return select_multiple_episodes(episodes);
+    }
+
+    let mut items = vec![
+        "← Back to anime results".to_owned(),
+        "☑ Select multiple episodes".to_owned(),
+    ];
+    items.extend(episodes.iter().cloned());
+    let Some(index) = FuzzySelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select episode (Esc: back, type to filter)")
+        .items(&items)
+        .default(episodes.len() + 1)
+        .interact_opt()
+        .map_err(dialog_error)?
+    else {
+        return Ok(None);
+    };
+
+    match index {
+        0 => Ok(None),
+        1 => select_multiple_episodes(episodes),
+        index => Ok(Some(episodes[index - 2].clone())),
+    }
+}
+
+fn select_multiple_episodes(episodes: &[String]) -> Result<Option<String>> {
+    let Some(selected) = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select episodes (Space: toggle, Enter: confirm, Esc: back)")
+        .items(episodes)
+        .interact_opt()
+        .map_err(dialog_error)?
+    else {
+        return Ok(None);
+    };
+    Ok(multiple_episode_selection(episodes, &selected))
+}
+
+fn multiple_episode_selection(episodes: &[String], selected: &[usize]) -> Option<String> {
+    (!selected.is_empty()).then(|| {
+        selected
+            .iter()
+            .filter_map(|index| episodes.get(*index))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
 }
 
 async fn continue_selection(
@@ -738,6 +797,17 @@ mod tests {
         assert!(cli.allow_adult);
         assert!(cli.no_detach);
         assert_eq!(cli.quality, "720p");
+    }
+
+    #[test]
+    fn multiple_episode_selection_preserves_episode_order() {
+        let episodes = vec!["1".into(), "2".into(), "2.5".into(), "10".into()];
+
+        assert_eq!(
+            multiple_episode_selection(&episodes, &[0, 2, 3]).as_deref(),
+            Some("1 2.5 10")
+        );
+        assert_eq!(multiple_episode_selection(&episodes, &[]), None);
     }
 
     #[test]

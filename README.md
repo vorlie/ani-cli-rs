@@ -83,9 +83,9 @@ ani-cli-rs --download -e 1 "anime title"
 ani-cli-rs --delete
 ```
 
-Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `--dub`, `--no-detach`, and `--exit-after-play`.
+Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
 
-Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
+Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_MULTI_SELECTION`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
 
 History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `ANI_CLI_HIST_DIR` to share an existing history directory.
 
@@ -96,6 +96,7 @@ After a single episode is launched from an interactive terminal, ani-cli-rs keep
 - Arrow keys navigate every menu; `Tab` and `Shift+Tab` also move down and up.
 - Plain action menus additionally accept `j`/`k` to move, `h`/`l` to change pages, and Space or Enter to select.
 - Fuzzy anime and episode menus accept typing immediately and include a visible Back row.
+- The episode picker includes a multi-selection mode; use Space to toggle episodes and Enter to confirm. Set `ANI_CLI_MULTI_SELECTION=true` or pass `--multi-selection` to open it directly.
 - Escape goes back immediately from a fuzzy menu: episodes return to anime results, and anime results return to search. `q` remains available as a filter character for titles containing that letter.
 - In action and quality menus, `q` or Escape returns or exits without treating cancellation as an error.
 - Non-interactive options such as `--select-nth` and `--episode` retain their existing behavior.
