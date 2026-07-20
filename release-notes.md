@@ -1,45 +1,70 @@
-# ani-cli-rs 0.2.0
+# ani-cli-rs 0.3.0
 
-`0.2.0` is the first feature update to the Rust ani-cli port. It improves AllAnime rollout resilience, adds adult-search controls and live download progress, and makes Windows builds and HTTPS handling more reliable.
+`0.3.0` improves interactive session continuity and closes several compatibility gaps with Bash ani-cli. Playback controls now remain available after explicitly selecting an episode, the episode picker can select multiple episodes, legacy options work after search terms, and `-N/--nextep-countdown` provides the upstream release-schedule lookup.
 
-There are no intentional breaking changes to the existing CLI flags, history format, or JSON subcommands.
+There are no intentional breaking changes to existing flags, environment variables, history files, library APIs, or JSON subcommands.
 
 ## Highlights
 
-### Adult search toggle
+### Persistent playback controls
 
-- Added `-a` / `--allow-adult` to interactive searches and the scriptable `search` subcommand.
-- Added `ANI_CLI_ALLOW_ADULT` for persistent configuration.
-- Added `SearchOptions` and `AllAnimeClient::search_with_options` to the library API; the existing `search` method remains available and keeps adult results disabled by default.
+- The playback menu now remains open after a single episode selected with `-e/--episode` finishes.
+- Users can continue to the next episode, replay, go to the previous episode, select another episode, or change quality without restarting ani-cli-rs.
+- Next and previous actions are only shown when the corresponding episode exists.
+- The current quality is displayed in the action menu.
+- `--exit-after-play` continues to skip the post-play menu for scripts and other non-interactive workflows.
 
-### Download progress
+### Multi-episode selection
 
-- Direct downloads now show percentage, transferred size, total size, average speed, and ETA.
-- Resumed `.part` downloads include existing bytes in the displayed progress.
-- Interactive terminals update progress in place, while redirected output emits periodic progress lines.
-- yt-dlp progress is explicitly enabled, and FFmpeg retains its native bitrate and speed statistics.
-- Failed direct downloads leave the terminal on a clean line and preserve the resumable partial file.
+- Added a visible **Select multiple episodes** entry to the interactive episode picker.
+- Space toggles episodes, Enter confirms the selection, and Escape returns to the previous menu.
+- Added `--multi-selection` to open the multi-select picker directly.
+- Added Bash-compatible `ANI_CLI_MULTI_SELECTION` configuration.
+- Explicit `-e/--episode` values and ranges retain their existing non-interactive behavior.
 
-### AllAnime reliability
+### Bash-style argument ordering
 
-- Updated bundled crypto material for AllAnime epoch `6884`, build `48`.
-- Retained the legacy epoch `4128` material for builds `12` and `9`.
-- Added adjacent-epoch attempts to tolerate short bootstrap/API rollout mismatches.
-- Full GraphQL requests are attempted immediately after a failed persisted query for each crypto candidate, reducing unnecessary requests before a viable fallback.
-- Expanded tests for current and legacy key derivation, adult search variables, and fallback behavior.
+- Options may now appear before, after, or between search terms.
+- Commands such as `ani-cli-rs frieren -q 1080p -e 2` now behave like their Bash ani-cli equivalents.
+- Multi-word queries remain intact when flags are interspersed.
 
-### Windows and networking
+### Next-release schedule lookup
 
-- HTTPS now uses Windows-native certificate roots together with bundled public WebPKI roots, improving compatibility on filtered or unusually configured networks.
-- Network errors now include their underlying TLS and transport causes for more useful diagnostics.
-- `cargo release-windows` and the Windows packaging script remap local profile paths, preventing the builder's username from being embedded in release binaries through Rust source-location strings.
+- Added `-N/--nextep-countdown` compatibility using AnimeSchedule.
+- Displays English and Japanese titles, upcoming raw and subtitled release timestamps, and the current series status.
+- Schedule mode exits without contacting AllAnime or launching a player.
+- When used interactively without a query, ani-cli-rs prompts for an anime title; non-interactive use requires a query.
 
-### Installer and documentation fixes
+Despite the upstream option name, this command reports the next scheduled episode release. It does not automatically start the next locally available episode.
 
-- Fixed the Linux installer when GitHub returns compact, single-line release JSON.
-- Corrected raw installation links to use the repository's `master` branch.
-- Improved documentation for adult search, release builds, and download status output.
-- AllAnime debug JSON exports are ignored by Git to prevent accidental commits.
+### Plugin architecture roadmap
+
+- Added `PLUGIN-ROADMAP.md`, proposing external executable provider plugins instead of unstable in-process Rust dynamic libraries.
+- The roadmap covers discovery, a versioned JSON-lines protocol, process isolation, provider integration, security, testing, and possible AniPlay interoperability.
+- This release does not load or execute plugins; the document describes future work only.
+
+## Examples
+
+```console
+# Flags can follow the query
+ani-cli-rs frieren -q 1080p -e 2
+
+# Open the multi-episode picker directly
+ani-cli-rs --multi-selection "cowboy bebop"
+
+# Display upcoming release information
+ani-cli-rs -N "one piece"
+```
+
+Multi-selection can also be enabled persistently:
+
+```sh
+export ANI_CLI_MULTI_SELECTION=true
+```
+
+```powershell
+$env:ANI_CLI_MULTI_SELECTION = "true"
+```
 
 ## Installation
 
@@ -57,24 +82,16 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 .\install.ps1
 ```
 
-The installers verify the downloaded archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
+The installers verify the release archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
 
-## Release asset checklist
-
-Upload each archive together with its generated `.sha256` file:
-
-- `ani-cli-rs-0.2.0-x86_64-pc-windows-msvc.zip`
-- `ani-cli-rs-0.2.0-x86_64-pc-windows-msvc.zip.sha256`
-- `ani-cli-rs-0.2.0-x86_64-unknown-linux-musl.tar.gz`
-- `ani-cli-rs-0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256`
-
-Official macOS binaries are not published. macOS users can build from source with the included Cargo aliases.
+Official macOS binaries are not published. macOS users may build from source with the included Cargo aliases.
 
 ## Verification
 
-- 22 deterministic Rust tests pass.
-- `cargo fmt --all -- --check` passes.
-- `cargo clippy --locked --all-targets -- -D warnings` passes.
-- Windows and Linux release packaging produce versioned archives and checksum files.
+- 28 deterministic Rust tests pass.
+- `cargo fmt --check` passes.
+- `cargo check --all-targets` passes.
+- `cargo clippy --all-targets -- -D warnings` passes.
+- The AnimeSchedule integration was smoke-tested against its live API.
 
-**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.1.0...v0.2.0
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.2.0...0.3.0
