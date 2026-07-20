@@ -34,6 +34,12 @@ impl FromStr for TranslationType {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SearchOptions {
+    /// Include titles marked as adult by AllAnime.
+    pub allow_adult: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct SearchResult {
     pub id: String,

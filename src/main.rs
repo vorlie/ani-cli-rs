@@ -2,8 +2,8 @@ use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
     AllAnimeClient, AniError, DownloadOptions, HistoryEntry, HistoryStore, Player, PlayerKind,
-    PlayerOptions, Result, SearchResult, TranslationType, choose_quality, download_stream,
-    expand_episode_selection,
+    PlayerOptions, Result, SearchOptions, SearchResult, TranslationType, choose_quality,
+    download_stream, expand_episode_selection,
 };
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, Select, theme::ColorfulTheme};
@@ -11,7 +11,7 @@ use serde::Serialize;
 
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime.\n\nThe interactive workflow searches the subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. HLS downloads prefer yt-dlp and fall back to ffmpeg, while direct media downloads are handled internally.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select an action\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --json \"frieren\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select an action\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_NO_DETACH,\n  ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -51,6 +51,9 @@ struct Cli {
     /// Search and play the dubbed catalog instead of subtitles.
     #[arg(long)]
     dub: bool,
+    /// Include titles marked as adult in AllAnime search results.
+    #[arg(short = 'a', long, env = "ANI_CLI_ALLOW_ADULT")]
+    allow_adult: bool,
     /// Keep the player attached and wait for it to exit.
     #[arg(long, env = "ANI_CLI_NO_DETACH")]
     no_detach: bool,
@@ -91,6 +94,9 @@ struct SearchArgs {
     /// Translation catalog to query: sub or dub.
     #[arg(long, default_value = "sub")]
     mode: String,
+    /// Include titles marked as adult in search results.
+    #[arg(short = 'a', long, env = "ANI_CLI_ALLOW_ADULT")]
+    allow_adult: bool,
     /// Print structured JSON instead of tab-separated text.
     #[arg(long)]
     json: bool,
@@ -214,7 +220,15 @@ async fn run(cli: Cli) -> Result<()> {
                     .interact_text()
                     .map_err(dialog_error)?
             };
-            let results = client.search(&query, mode).await?;
+            let results = client
+                .search_with_options(
+                    &query,
+                    mode,
+                    SearchOptions {
+                        allow_adult: cli.allow_adult,
+                    },
+                )
+                .await?;
             'anime: loop {
                 let Some(show) = select_search_result(&results, cli.select_nth)? else {
                     continue 'search;
@@ -263,7 +277,13 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
     match command {
         Commands::Search(args) => {
             let values = client
-                .search(&args.query, TranslationType::from_str(&args.mode)?)
+                .search_with_options(
+                    &args.query,
+                    TranslationType::from_str(&args.mode)?,
+                    SearchOptions {
+                        allow_adult: args.allow_adult,
+                    },
+                )
                 .await?;
             output(&values, args.json, |value| {
                 format!("{}\t{} ({} episodes)", value.id, value.name, value.episodes)

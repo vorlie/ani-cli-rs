@@ -1,5 +1,7 @@
-fix(installer): handle compact GitHub release JSON
+feat: add adult search and harden Windows releases
 
-- parse the latest tag regardless of JSON whitespace formatting
-- construct deterministic archive and checksum download URLs
-- keep the existing 0.1.0 Linux release assets installable
+- add -a/--allow-adult to interactive and scriptable searches
+- support ANI_CLI_ALLOW_ADULT for persistent configuration
+- trust both Windows-native and bundled public certificate roots
+- include underlying TLS and transport causes in network errors
+- remap local profile paths out of Windows release binaries

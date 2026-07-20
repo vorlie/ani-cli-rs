@@ -21,9 +21,14 @@ if (-not $licensePath) {
     throw "Could not find LICENSE in the project or repository root."
 }
 
-cargo build --locked --release --target $Target --manifest-path (Join-Path $projectRoot "Cargo.toml")
-if ($LASTEXITCODE -ne 0) {
-    throw "Cargo build failed for $Target."
+if ($Target -like "*windows*") {
+    & (Join-Path $PSScriptRoot "build-windows.ps1") -Target $Target
+}
+else {
+    cargo build --locked --release --target $Target --manifest-path (Join-Path $projectRoot "Cargo.toml")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cargo build failed for $Target."
+    }
 }
 
 New-Item -ItemType Directory -Force $packageDirectory | Out-Null
@@ -36,4 +41,3 @@ $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.T
 $checksumPath = "$archivePath.sha256"
 Set-Content -LiteralPath $checksumPath -Value "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))" -Encoding ascii
 Write-Host "Created $archivePath and $checksumPath"
-

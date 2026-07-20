@@ -15,7 +15,7 @@ pub use download::{DownloadOptions, download_stream};
 pub use error::{AniError, Result};
 pub use history::{HistoryEntry, HistoryStore};
 pub use models::{
-    CryptoDebugInfo, RequestHeaders, SearchResult, StreamLink, TranslationType, choose_quality,
-    expand_episode_selection,
+    CryptoDebugInfo, RequestHeaders, SearchOptions, SearchResult, StreamLink, TranslationType,
+    choose_quality, expand_episode_selection,
 };
 pub use player::{Player, PlayerKind, PlayerOptions};

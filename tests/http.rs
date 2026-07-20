@@ -1,4 +1,4 @@
-use ani_cli::{AllAnimeClient, TranslationType};
+use ani_cli::{AllAnimeClient, SearchOptions, TranslationType};
 use serde_json::json;
 use tempfile::tempdir;
 use wiremock::{
@@ -27,6 +27,35 @@ async fn parses_search_response_from_graphql() {
         .unwrap();
     assert_eq!(results[0].id, "show-1");
     assert_eq!(results[0].episodes, 12.0);
+}
+
+#[tokio::test]
+async fn sends_allow_adult_search_option() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api"))
+        .and(body_partial_json(
+            json!({"variables":{"search":{"allowAdult":true}}}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data":{"shows":{"edges":[]}}
+        })))
+        .mount(&server)
+        .await;
+    let client = AllAnimeClient::builder()
+        .api_url(format!("{}/api", server.uri()))
+        .state_dir(tempdir().unwrap().path())
+        .build()
+        .unwrap();
+    let results = client
+        .search_with_options(
+            "example",
+            TranslationType::Sub,
+            SearchOptions { allow_adult: true },
+        )
+        .await
+        .unwrap();
+    assert!(results.is_empty());
 }
 
 #[tokio::test]

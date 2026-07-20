@@ -15,8 +15,8 @@ use tracing::warn;
 use url::Url;
 
 use crate::{
-    AniError, CipherMapInfo, CryptoDebugInfo, RequestHeaders, Result, SearchResult, StreamLink,
-    TranslationType,
+    AniError, CipherMapInfo, CryptoDebugInfo, RequestHeaders, Result, SearchOptions, SearchResult,
+    StreamLink, TranslationType,
     cipher::{builtin_cipher_map, decode_url, load_cached, parse_upstream_cipher_map, save_cached},
     crypto::{
         BUILD_ID, CryptoMaterial, LEGACY_BUILD_ID, QUERY_HASH, aa_req, decode_episode_response,
@@ -185,8 +185,18 @@ impl AllAnimeClient {
     }
 
     pub async fn search(&self, query: &str, mode: TranslationType) -> Result<Vec<SearchResult>> {
+        self.search_with_options(query, mode, SearchOptions::default())
+            .await
+    }
+
+    pub async fn search_with_options(
+        &self,
+        query: &str,
+        mode: TranslationType,
+        options: SearchOptions,
+    ) -> Result<Vec<SearchResult>> {
         let body = json!({
-            "variables": {"search":{"allowAdult":false,"allowUnknown":false,"query":query},"limit":40,"page":1,"translationType":mode.to_string(),"countryOrigin":"ALL"},
+            "variables": {"search":{"allowAdult":options.allow_adult,"allowUnknown":false,"query":query},"limit":40,"page":1,"translationType":mode.to_string(),"countryOrigin":"ALL"},
             "query": SEARCH_GQL,
         });
         let value: Value = self

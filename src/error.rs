@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, AniError>;
@@ -5,7 +7,7 @@ pub type Result<T> = std::result::Result<T, AniError>;
 #[derive(Debug, Error)]
 pub enum AniError {
     #[error("network request failed: {0}")]
-    Network(#[from] reqwest::Error),
+    Network(String),
     #[error("AllAnime GraphQL error: {0}")]
     GraphQl(String),
     #[error(
@@ -34,4 +36,20 @@ pub enum AniError {
     Json(#[from] serde_json::Error),
     #[error("URL error: {0}")]
     Url(#[from] url::ParseError),
+}
+
+impl From<reqwest::Error> for AniError {
+    fn from(error: reqwest::Error) -> Self {
+        let mut message = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            let cause_message = cause.to_string();
+            if !message.ends_with(&cause_message) {
+                message.push_str(": ");
+                message.push_str(&cause_message);
+            }
+            source = cause.source();
+        }
+        Self::Network(message)
+    }
 }

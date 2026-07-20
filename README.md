@@ -29,6 +29,8 @@ cargo release-macos-arm64
 
 For example, the portable Linux build is placed in `target/x86_64-unknown-linux-musl/release/ani-cli-rs`, while Windows uses `target/x86_64-pc-windows-msvc/release/ani-cli-rs.exe`.
 
+The Windows release command and packaging script remap the builder's user-profile path to `/build`, preventing local usernames from being embedded in Rust panic and source-location strings.
+
 The packaging scripts additionally create a standalone archive under `dist/` containing only the executable, README, and license:
 
 ```powershell
@@ -73,6 +75,7 @@ Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncp
 
 ```console
 ani-cli-rs frieren
+ani-cli-rs --allow-adult "search query"
 ani-cli-rs --dub -q 720p "cowboy bebop"
 ani-cli-rs -S 1 -e 2-4 "one piece"
 ani-cli-rs --continue
@@ -80,9 +83,9 @@ ani-cli-rs --download -e 1 "anime title"
 ani-cli-rs --delete
 ```
 
-Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `--dub`, `--no-detach`, and `--exit-after-play`.
+Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `--dub`, `--no-detach`, and `--exit-after-play`.
 
-Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
+Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
 
 History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `ANI_CLI_HIST_DIR` to share an existing history directory.
 
@@ -99,6 +102,7 @@ History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `
 
 ```console
 ani-cli-rs search --json "frieren"
+ani-cli-rs search --allow-adult --json "search query"
 ani-cli-rs episodes --json SHOW_ID --mode sub
 ani-cli-rs links --json SHOW_ID 1 --quality 1080p
 ani-cli-rs play SHOW_ID 1 --title "Frieren" --no-detach
@@ -112,12 +116,16 @@ ani-cli-rs refresh-cipher-map
 ## Library
 
 ```rust,no_run
-use ani_cli::{AllAnimeClient, TranslationType};
+use ani_cli::{AllAnimeClient, SearchOptions, TranslationType};
 
 #[tokio::main]
 async fn main() -> ani_cli::Result<()> {
     let client = AllAnimeClient::new()?;
-    let shows = client.search("frieren", TranslationType::Sub).await?;
+    let shows = client.search_with_options(
+        "search query",
+        TranslationType::Sub,
+        SearchOptions { allow_adult: true },
+    ).await?;
     let episodes = client.episodes(&shows[0].id, TranslationType::Sub).await?;
     let streams = client.streams(&shows[0].id, &episodes[0], TranslationType::Sub).await?;
     println!("{}", streams[0].url);
