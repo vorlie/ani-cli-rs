@@ -1,38 +1,80 @@
-# ani-cli-rs 0.1.0
+# ani-cli-rs 0.2.0
 
-Initial release of a standalone Rust port of ani-cli for Windows, Linux, and macOS source builds. The executable is named `ani-cli-rs`, allowing it to coexist with the Bash `ani-cli` command.
+`0.2.0` is the first feature update to the Rust ani-cli port. It improves AllAnime rollout resilience, adds adult-search controls and live download progress, and makes Windows builds and HTTPS handling more reliable.
 
-## AllAnime support
+There are no intentional breaking changes to the existing CLI flags, history format, or JSON subcommands.
 
-- Added catalog search, sub/dub episode discovery, encrypted episode queries, and source resolution.
-- Added runtime MKissa crypto and API discovery with AES-256-GCM request signing and encrypted-response decoding.
-- Added controlled rate-limit retries and compatibility fallbacks for changing AllAnime builds.
-- Added support for obfuscated source URLs, internal clock APIs, direct MP4 and HLS media, Mp4Upload, fast4speed, master playlists, and Wix multi-quality streams.
-- Preserved provider-specific referer and origin headers for playback and downloads.
-- Added runtime refresh and caching of the upstream ani-cli URL cipher map.
+## Highlights
 
-## CLI and desktop workflow
+### Adult search toggle
 
-- Added familiar ani-cli flags for search, episode/range selection, dub mode, quality, history continuation, downloads, VLC, Syncplay, and attached playback.
-- Added keyboard-friendly interactive menus with Back navigation, fuzzy filtering, and next/replay/previous actions.
-- Added scriptable `search`, `episodes`, `links`, `play`, `download`, `debug`, and `refresh-cipher-map` subcommands with JSON output where applicable.
-- Added Bash ani-cli-compatible tab-separated history storage and supported `ANI_CLI_*` environment variables.
-- Added mpv, VLC, and Syncplay launching with arguments passed safely to child processes.
-- Added resumable direct downloads and HLS downloads through yt-dlp with an ffmpeg fallback.
+- Added `-a` / `--allow-adult` to interactive searches and the scriptable `search` subcommand.
+- Added `ANI_CLI_ALLOW_ADULT` for persistent configuration.
+- Added `SearchOptions` and `AllAnimeClient::search_with_options` to the library API; the existing `search` method remains available and keeps adult results disabled by default.
 
-## Distribution
+### Download progress
 
-- Added Cargo aliases and packaging scripts for Windows and static musl Linux builds, including x86-64 and Linux ARM64 targets.
-- Added checksum-verifying install and uninstall scripts for releases published under `vorlie/ani-cli-rs`.
-- Official prebuilt releases are provided for Windows and Linux. macOS users can build locally with the included Cargo aliases, but official macOS assets are not currently published.
+- Direct downloads now show percentage, transferred size, total size, average speed, and ETA.
+- Resumed `.part` downloads include existing bytes in the displayed progress.
+- Interactive terminals update progress in place, while redirected output emits periodic progress lines.
+- yt-dlp progress is explicitly enabled, and FFmpeg retains its native bitrate and speed statistics.
+- Failed direct downloads leave the terminal on a clean line and preserve the resumable partial file.
+
+### AllAnime reliability
+
+- Updated bundled crypto material for AllAnime epoch `6884`, build `48`.
+- Retained the legacy epoch `4128` material for builds `12` and `9`.
+- Added adjacent-epoch attempts to tolerate short bootstrap/API rollout mismatches.
+- Full GraphQL requests are attempted immediately after a failed persisted query for each crypto candidate, reducing unnecessary requests before a viable fallback.
+- Expanded tests for current and legacy key derivation, adult search variables, and fallback behavior.
+
+### Windows and networking
+
+- HTTPS now uses Windows-native certificate roots together with bundled public WebPKI roots, improving compatibility on filtered or unusually configured networks.
+- Network errors now include their underlying TLS and transport causes for more useful diagnostics.
+- `cargo release-windows` and the Windows packaging script remap local profile paths, preventing the builder's username from being embedded in release binaries through Rust source-location strings.
+
+### Installer and documentation fixes
+
+- Fixed the Linux installer when GitHub returns compact, single-line release JSON.
+- Corrected raw installation links to use the repository's `master` branch.
+- Improved documentation for adult search, release builds, and download status output.
+- AllAnime debug JSON exports are ignored by Git to prevent accidental commits.
+
+## Installation
+
+### Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh -o install.sh
+sh install.sh
+```
+
+### Windows PowerShell
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The installers verify the downloaded archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
+
+## Release asset checklist
+
+Upload each archive together with its generated `.sha256` file:
+
+- `ani-cli-rs-0.2.0-x86_64-pc-windows-msvc.zip`
+- `ani-cli-rs-0.2.0-x86_64-pc-windows-msvc.zip.sha256`
+- `ani-cli-rs-0.2.0-x86_64-unknown-linux-musl.tar.gz`
+- `ani-cli-rs-0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256`
+
+Official macOS binaries are not published. macOS users can build from source with the included Cargo aliases.
 
 ## Verification
 
-- All 18 automated Rust tests pass.
-- `cargo fmt --check` passes.
-- `cargo clippy --all-targets -- -D warnings` passes.
-- Live AllAnime validation resolves current episode sources successfully.
+- 22 deterministic Rust tests pass.
+- `cargo fmt --all -- --check` passes.
+- `cargo clippy --locked --all-targets -- -D warnings` passes.
+- Windows and Linux release packaging produce versioned archives and checksum files.
 
-## Known omissions
-
-Self-update, rofi/dmenu integration, Android/Termux and iSH adapters, intro skipping, system-journal logging, and next-release lookup are not included in 0.1.0.
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.1.0...v0.2.0
