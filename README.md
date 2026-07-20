@@ -50,7 +50,7 @@ Each package is accompanied by a `.sha256` file. Upload both files to the matchi
 Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/main/scripts/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh -o install.sh
 sh install.sh
 rm install.sh
 ```
@@ -58,7 +58,7 @@ rm install.sh
 Windows PowerShell:
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/main/scripts/install.ps1 -OutFile install.ps1
+Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1 -OutFile install.ps1
 .\install.ps1
 Remove-Item .\install.ps1
 ```
