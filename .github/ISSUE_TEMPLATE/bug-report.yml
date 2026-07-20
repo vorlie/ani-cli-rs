@@ -1,0 +1,117 @@
+name: Bug report
+description: Report a reproducible problem with ani-cli-rs itself
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ani-cli-rs. For AllAnime source or playback failures, use the provider-breakage form instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: ani-cli-rs version
+      description: Run `ani-cli-rs --version` and paste the complete output.
+      placeholder: ani-cli-rs 0.3.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: platform-details
+    attributes:
+      label: Platform details
+      description: Include the distribution/version, CPU architecture, terminal, and shell when relevant.
+      placeholder: Arch Linux x86_64, Windows Terminal, PowerShell 7
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - GitHub release installer
+        - GitHub release archive
+        - Built from source
+        - Cargo install
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Command-line arguments
+        - Interactive menus
+        - Player or Syncplay launch
+        - Downloads
+        - History
+        - Installer or release package
+        - Library API
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: Explain what went wrong and how it affects you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the exact command and the smallest reliable sequence of steps.
+      placeholder: |
+        1. Run `ani-cli-rs ...`
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Run with `RUST_LOG=debug` when useful. Remove usernames, private paths, cookies, authorization headers, and expiring media URLs before posting.
+      render: text
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested the latest published release or current `master` branch.
+          required: true
+        - label: I searched existing open and closed issues for this problem.
+          required: true
+        - label: I removed private information and temporary stream credentials from the report.
+          required: true
+

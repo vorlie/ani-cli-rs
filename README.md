@@ -8,6 +8,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) f
 - [Antivirus and verification](#antivirus-and-release-verification) · [Compatible workflow](#compatible-workflow) · [Keyboard navigation](#keyboard-navigation)
 - [Scriptable commands](#scriptable-commands) · [Library API](#library) · [Diagnostics and tests](#diagnostics-and-tests)
 - [Deliberately excluded features](#deliberately-excluded-from-v1)
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Plugin roadmap](PLUGIN-ROADMAP.md)
 
 ## Build
 

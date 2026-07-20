@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest a focused improvement to ani-cli-rs
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What workflow is difficult or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the command, option, library API, or interactive workflow you would expect.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - Bash ani-cli compatibility
+        - Interactive terminal UX
+        - AllAnime scraper
+        - Playback or downloads
+        - Library API
+        - Installation or packaging
+        - Plugin roadmap
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds or related upstream ani-cli behavior.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and the plugin roadmap for this request.
+          required: true
+        - label: This request does not require bundling proprietary software or credentials.
+          required: true
+

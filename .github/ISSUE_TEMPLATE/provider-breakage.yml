@@ -1,0 +1,93 @@
+name: AllAnime or provider breakage
+description: Report search, episode, crypto, source-resolution, or playback failures
+title: "[Provider]: "
+labels:
+  - bug
+  - provider
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provider failures may be temporary or affect every client at once. Please check existing issues before submitting a new report. Do not post complete signed media URLs or authorization data.
+
+  - type: input
+    id: version
+    attributes:
+      label: ani-cli-rs version
+      placeholder: ani-cli-rs 0.3.0
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      placeholder: Windows 11 x86_64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failure stage
+      options:
+        - Search
+        - Episode list
+        - AllAnime bootstrap or crypto
+        - Episode response decoding
+        - Provider source resolution
+        - Player receives a URL but cannot play it
+        - Download
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: title
+    attributes:
+      label: Anime and episode
+      description: Include translation mode when relevant. Do not include a media URL.
+      placeholder: Frieren, episode 1, sub
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Complete error
+      description: Paste the error and provider skip reasons exactly as displayed.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Attach sanitized output from `ani-cli-rs debug` and a run with `RUST_LOG=debug` if available. Remove usernames, private paths, cookies, authorization headers, and expiring media URLs.
+      render: text
+
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network comparison
+      options:
+        - Fails on multiple networks or through a VPN
+        - Works through a VPN or different network
+        - Only tested on one network
+        - Not applicable
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested the latest published release or current `master` branch.
+          required: true
+        - label: I checked for an existing provider outage or breakage issue.
+          required: true
+        - label: I did not include complete stream URLs, tokens, or other private data.
+          required: true
+
