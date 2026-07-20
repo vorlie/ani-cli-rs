@@ -89,13 +89,15 @@ Official Windows binaries are currently unsigned and may trigger Microsoft Smart
 Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
 
 ```powershell
-(Get-FileHash .\ani-cli-rs-0.3.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\ani-cli-rs-0.3.0-x86_64-pc-windows-msvc.zip.sha256
+(Get-FileHash .\ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.
 
-Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay. HLS downloads use `yt-dlp`, falling back to `ffmpeg`; direct MP4 downloads are handled internally with resumable `.part` files. Downloads report transferred size, speed, and ETA when available.
+Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay.
+
+For faster downloads, install `aria2c` through your operating system's package manager and ensure it is available in `PATH`. Direct media then uses up to 16 parallel connections with resume support. HLS downloads use yt-dlp with aria2c as its external downloader while retaining yt-dlp's 16 concurrent fragment setting. If aria2c fails or is unavailable, direct media falls back to the built-in resumable `.part` downloader; HLS retries with yt-dlp alone and then FFmpeg. Each available downloader reports its own size, speed, percentage, and ETA information.
 
 ## Compatible workflow
 

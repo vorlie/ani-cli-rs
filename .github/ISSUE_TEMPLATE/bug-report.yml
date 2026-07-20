@@ -14,7 +14,7 @@ body:
     attributes:
       label: ani-cli-rs version
       description: Run `ani-cli-rs --version` and paste the complete output.
-      placeholder: ani-cli-rs 0.3.0
+      placeholder: ani-cli-rs 0.4.0
     validations:
       required: true
 
@@ -114,4 +114,3 @@ body:
           required: true
         - label: I removed private information and temporary stream credentials from the report.
           required: true
-

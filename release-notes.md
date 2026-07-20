@@ -1,70 +1,47 @@
-# ani-cli-rs 0.3.0
+# ani-cli-rs 0.4.0
 
-`0.3.0` improves interactive session continuity and closes several compatibility gaps with Bash ani-cli. Playback controls now remain available after explicitly selecting an episode, the episode picker can select multiple episodes, legacy options work after search terms, and `-N/--nextep-countdown` provides the upstream release-schedule lookup.
+`0.4.0` focuses on faster, more resilient downloads and better project support resources. aria2c can now accelerate direct and HLS transfers, downloader failures proceed through a real fallback chain, and the repository includes structured issue reporting, contribution guidance, and security documentation.
 
-There are no intentional breaking changes to existing flags, environment variables, history files, library APIs, or JSON subcommands.
+There are no intentional breaking changes to existing CLI flags, environment variables, history files, library APIs, or JSON subcommands.
 
 ## Highlights
 
-### Persistent playback controls
+### Faster parallel downloads with aria2
 
-- The playback menu now remains open after a single episode selected with `-e/--episode` finishes.
-- Users can continue to the next episode, replay, go to the previous episode, select another episode, or change quality without restarting ani-cli-rs.
-- Next and previous actions are only shown when the corresponding episode exists.
-- The current quality is displayed in the action menu.
-- `--exit-after-play` continues to skip the post-play menu for scripts and other non-interactive workflows.
+- Direct media downloads prefer aria2c when it is installed, using up to 16 connections and resumable partial files.
+- HLS downloads let yt-dlp delegate transfers to aria2c while retaining 16 concurrent fragments.
+- Provider-specific Referer, Origin, and additional request headers are passed to every downloader.
+- A failed aria2c transfer falls back to the built-in Rust downloader for direct media.
+- HLS failures retry through native yt-dlp and then FFmpeg instead of stopping after the first installed tool fails.
+- Existing installations without aria2c continue to work without configuration changes.
 
-### Multi-episode selection
+Download acceleration depends on the media server supporting parallel range requests. When a server limits connections or bandwidth, aria2c may perform similarly to the existing downloaders.
 
-- Added a visible **Select multiple episodes** entry to the interactive episode picker.
-- Space toggles episodes, Enter confirms the selection, and Escape returns to the previous menu.
-- Added `--multi-selection` to open the multi-select picker directly.
-- Added Bash-compatible `ANI_CLI_MULTI_SELECTION` configuration.
-- Explicit `-e/--episode` values and ranges retain their existing non-interactive behavior.
+### GitHub community and security resources
 
-### Bash-style argument ordering
+- Added structured forms for application bugs, provider breakage, and feature requests.
+- Added a pull-request template with formatting, linting, testing, scraper-fixture, and privacy checks.
+- Added contribution guidance for deterministic scraper tests, platform-safe process handling, and focused commits.
+- Added a security policy directing exploitable reports to GitHub's private vulnerability-reporting flow.
+- Added dedicated provider diagnostics prompts while warning reporters not to publish signed media URLs, credentials, or private paths.
 
-- Options may now appear before, after, or between search terms.
-- Commands such as `ani-cli-rs frieren -q 1080p -e 2` now behave like their Bash ani-cli equivalents.
-- Multi-word queries remain intact when flags are interspersed.
+### Documentation and release verification
 
-### Next-release schedule lookup
+- Added README quick links for installation, usage, diagnostics, contribution, security, and roadmap documentation.
+- Documented why unsigned Windows builds and the AllAnime crypto/bootstrap workflow may trigger heuristic antivirus warnings.
+- Added manual SHA-256 verification instructions and clarified what a matching checksum does and does not establish.
+- Corrected the deliberately excluded feature list now that AnimeSchedule lookup is implemented.
 
-- Added `-N/--nextep-countdown` compatibility using AnimeSchedule.
-- Displays English and Japanese titles, upcoming raw and subtitled release timestamps, and the current series status.
-- Schedule mode exits without contacting AllAnime or launching a player.
-- When used interactively without a query, ani-cli-rs prompts for an anime title; non-interactive use requires a query.
+## Download behavior
 
-Despite the upstream option name, this command reports the next scheduled episode release. It does not automatically start the next locally available episode.
+When aria2c is installed and available in `PATH`, the fallback order is:
 
-### Plugin architecture roadmap
-
-- Added `PLUGIN-ROADMAP.md`, proposing external executable provider plugins instead of unstable in-process Rust dynamic libraries.
-- The roadmap covers discovery, a versioned JSON-lines protocol, process isolation, provider integration, security, testing, and possible AniPlay interoperability.
-- This release does not load or execute plugins; the document describes future work only.
-
-## Examples
-
-```console
-# Flags can follow the query
-ani-cli-rs frieren -q 1080p -e 2
-
-# Open the multi-episode picker directly
-ani-cli-rs --multi-selection "cowboy bebop"
-
-# Display upcoming release information
-ani-cli-rs -N "one piece"
+```text
+Direct media: aria2c → built-in resumable Rust downloader
+HLS:         yt-dlp + aria2c → native yt-dlp → FFmpeg
 ```
 
-Multi-selection can also be enabled persistently:
-
-```sh
-export ANI_CLI_MULTI_SELECTION=true
-```
-
-```powershell
-$env:ANI_CLI_MULTI_SELECTION = "true"
-```
+No new downloader is mandatory. Users who want parallel transfers can install aria2 through their operating system's package manager.
 
 ## Installation
 
@@ -82,16 +59,25 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 .\install.ps1
 ```
 
-The installers verify the release archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
+The installers verify the downloaded archive against its published SHA-256 checksum before installing it into a user-local directory and adding that directory to `PATH` when necessary.
+
+## Release asset checklist
+
+Upload each archive together with its generated `.sha256` file:
+
+- `ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip`
+- `ani-cli-rs-0.4.0-x86_64-pc-windows-msvc.zip.sha256`
+- `ani-cli-rs-0.4.0-x86_64-unknown-linux-musl.tar.gz`
+- `ani-cli-rs-0.4.0-x86_64-unknown-linux-musl.tar.gz.sha256`
 
 Official macOS binaries are not published. macOS users may build from source with the included Cargo aliases.
 
 ## Verification
 
-- 28 deterministic Rust tests pass.
+- 30 deterministic Rust tests pass.
 - `cargo fmt --check` passes.
 - `cargo check --all-targets` passes.
 - `cargo clippy --all-targets -- -D warnings` passes.
-- The AnimeSchedule integration was smoke-tested against its live API.
+- aria2c argument construction and yt-dlp delegation are covered by unit tests.
 
-**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.2.0...0.3.0
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.3.0...0.4.0
