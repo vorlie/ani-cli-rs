@@ -69,7 +69,7 @@ The Unix installer uses `~/.local/bin` and updates `~/.profile` only when needed
 
 Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
 
-Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay. HLS downloads use `yt-dlp`, falling back to `ffmpeg`; direct MP4 downloads are handled internally with resumable `.part` files.
+Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay. HLS downloads use `yt-dlp`, falling back to `ffmpeg`; direct MP4 downloads are handled internally with resumable `.part` files. Downloads report transferred size, speed, and ETA when available.
 
 ## Compatible workflow
 
