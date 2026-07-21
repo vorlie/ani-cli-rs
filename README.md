@@ -73,7 +73,15 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 Remove-Item .\install.ps1
 ```
 
-Both installers use the user-local `~/.local/bin` directory by default (`$HOME\.local\bin` in PowerShell) and update the appropriate user path when needed. The built-in Windows updater replaces the executable in its existing installation directory, so installations made before `0.5.2` do not move unexpectedly. Override either installer with `ANI_CLI_RS_INSTALL_DIR`; the Windows scripts also accept `-InstallDirectory`.
+To use the interactive Inno Setup wizard instead of the portable ZIP installation:
+
+```powershell
+.\install.ps1 -UseSetup
+```
+
+Both modes verify the selected release asset against its published SHA-256 checksum. The setup mode requires the release to include the matching `windows-x64-setup.exe` and `.sha256` assets.
+
+The Unix and portable Windows script installations use the user-local `~/.local/bin` directory by default (`$HOME\.local\bin` in PowerShell). Inno Setup uses the per-user Programs directory and manages its own uninstall entry. The built-in Windows updater replaces the executable in its existing installation directory, so existing portable installations do not move unexpectedly. Override the script installation directory with `ANI_CLI_RS_INSTALL_DIR`; the Windows script also accepts `-InstallDirectory`.
 
 Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
 

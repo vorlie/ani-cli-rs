@@ -11,6 +11,13 @@ There are no breaking changes to playback, downloads, history, library APIs, or 
 - Kept in-app updates pinned to the directory containing the running executable. Installations made with an older version are therefore upgraded in place instead of leaving a stale executable earlier in `PATH`.
 - Kept `ANI_CLI_RS_INSTALL_DIR` and the PowerShell `-InstallDirectory` parameter available for custom locations.
 
+## Optional Windows Setup wizard
+
+- Added an Inno Setup package for users who prefer a conventional interactive Windows installer and uninstall entry.
+- Added `install.ps1 -UseSetup` to download, checksum-verify, and launch the setup wizard.
+- Kept the portable ZIP workflow as the default for scripts and automatic updates.
+- Windows release packaging now generates a SHA-256 checksum for the setup executable.
+
 Users on an earlier release can install this patch with:
 
 ```console
@@ -33,7 +40,13 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 .\install.ps1
 ```
 
-Fresh Windows installations are placed in `$HOME\.local\bin`. The installer adds that directory to the user-level `PATH` when needed.
+Fresh portable Windows installations are placed in `$HOME\.local\bin`. The script adds that directory to the user-level `PATH` when needed.
+
+Use the interactive Windows Setup wizard instead:
+
+```powershell
+.\install.ps1 -UseSetup
+```
 
 ## Release asset checklist
 
@@ -41,6 +54,8 @@ Upload each archive together with its generated `.sha256` file:
 
 - `ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip`
 - `ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip.sha256`
+- `ani-cli-rs-0.5.3-windows-x64-setup.exe`
+- `ani-cli-rs-0.5.3-windows-x64-setup.exe.sha256`
 - `ani-cli-rs-0.5.3-x86_64-unknown-linux-musl.tar.gz`
 - `ani-cli-rs-0.5.3-x86_64-unknown-linux-musl.tar.gz.sha256`
 

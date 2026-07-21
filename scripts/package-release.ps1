@@ -60,3 +60,38 @@ $archiveHash = (Get-Sha256Hash -Path $archivePath).ToLowerInvariant()
 $checksumPath = "$archivePath.sha256"
 Set-Content -LiteralPath $checksumPath -Value "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))" -Encoding ascii
 Write-Host "Created $archivePath and $checksumPath"
+
+# Only run Inno Setup for Windows targets
+if ($Target -like "*windows*") {
+    $issPath = Join-Path $projectRoot "installer.iss"
+
+    # Locate ISCC.exe (check PATH, or default install paths)
+    $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    if (-not $iscc) {
+        $defaultPaths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+        )
+        $iscc = $defaultPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+
+    if (-not $iscc) {
+        throw "Inno Setup Compiler (ISCC.exe) not found. Please install it or add it to PATH."
+    }
+
+    Write-Host "Building Inno Setup installer..."
+    & $iscc "/DAppVersion=$version" "/DSourceDir=$packageDirectory" "/DOutputDir=$(Join-Path $projectRoot 'dist')" $issPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup compilation failed."
+    }
+
+    $setupName = "ani-cli-rs-$version-windows-x64-setup.exe"
+    $setupPath = Join-Path $projectRoot "dist/$setupName"
+    if (-not (Test-Path -LiteralPath $setupPath)) {
+        throw "Inno Setup did not create the expected $setupName asset."
+    }
+    $setupHash = (Get-Sha256Hash -Path $setupPath).ToLowerInvariant()
+    $setupChecksumPath = "$setupPath.sha256"
+    Set-Content -LiteralPath $setupChecksumPath -Value "$setupHash  $setupName" -Encoding ascii
+    Write-Host "Created $setupPath and $setupChecksumPath"
+}
