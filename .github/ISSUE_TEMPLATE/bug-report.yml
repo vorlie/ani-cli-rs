@@ -14,7 +14,7 @@ body:
     attributes:
       label: ani-cli-rs version
       description: Run `ani-cli-rs --version` and paste the complete output.
-      placeholder: ani-cli-rs 0.5.2
+      placeholder: ani-cli-rs 0.5.3
     validations:
       required: true
 

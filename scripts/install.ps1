@@ -1,5 +1,5 @@
 param(
-    [string]$InstallDirectory = $(if ($env:ANI_CLI_RS_INSTALL_DIR) { $env:ANI_CLI_RS_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\ani-cli-rs\bin" }),
+    [string]$InstallDirectory = $(if ($env:ANI_CLI_RS_INSTALL_DIR) { $env:ANI_CLI_RS_INSTALL_DIR } else { Join-Path ([Environment]::GetFolderPath("UserProfile")) ".local\bin" }),
     [switch]$NoPathUpdate
 )
 

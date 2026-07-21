@@ -73,7 +73,7 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 Remove-Item .\install.ps1
 ```
 
-The Unix installer uses `~/.local/bin` and updates `~/.profile` only when needed. The Windows installer uses `%LOCALAPPDATA%\Programs\ani-cli-rs\bin` and updates the user-level `PATH`. Override either installer with `ANI_CLI_RS_INSTALL_DIR`; the Windows script also accepts `-InstallDirectory`.
+Both installers use the user-local `~/.local/bin` directory by default (`$HOME\.local\bin` in PowerShell) and update the appropriate user path when needed. The built-in Windows updater replaces the executable in its existing installation directory, so installations made before `0.5.2` do not move unexpectedly. Override either installer with `ANI_CLI_RS_INSTALL_DIR`; the Windows scripts also accept `-InstallDirectory`.
 
 Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
 
@@ -89,8 +89,8 @@ Official Windows binaries are currently unsigned and may trigger Microsoft Smart
 Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
 
 ```powershell
-certutil -hashfile .\ani-cli-rs-0.5.2-x86_64-pc-windows-msvc.zip SHA256
-Get-Content .\ani-cli-rs-0.5.2-x86_64-pc-windows-msvc.zip.sha256
+certutil -hashfile .\ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip SHA256
+Get-Content .\ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.

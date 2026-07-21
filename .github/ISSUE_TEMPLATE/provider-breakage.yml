@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: ani-cli-rs version
-      placeholder: ani-cli-rs 0.5.2
+      placeholder: ani-cli-rs 0.5.3
     validations:
       required: true
 

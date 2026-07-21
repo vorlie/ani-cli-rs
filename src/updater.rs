@@ -80,11 +80,19 @@ async fn download_installer(tag: &str) -> Result<PathBuf> {
 
 #[cfg(windows)]
 async fn launch_installer(script: &std::path::Path) -> Result<()> {
-    Command::new("powershell.exe")
+    let mut command = Command::new("powershell.exe");
+    command
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(script)
         .env("ANI_CLI_RS_WAIT_FOR_PID", std::process::id().to_string())
-        .env("ANI_CLI_RS_DELETE_INSTALLER", "1")
+        .env("ANI_CLI_RS_DELETE_INSTALLER", "1");
+    if let Some(install_directory) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+    {
+        command.env("ANI_CLI_RS_INSTALL_DIR", install_directory);
+    }
+    command
         .spawn()
         .map_err(|error| AniError::Update(format!("could not start PowerShell: {error}")))?;
     println!("The installer will continue after ani-cli-rs exits.");
