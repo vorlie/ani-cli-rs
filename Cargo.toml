@@ -1,6 +1,6 @@
 [package]
 name = "ani-cli-rs"
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Cross-platform Rust port of ani-cli with an AllAnime scraper"
@@ -24,7 +24,8 @@ directories = "6"
 futures-util = "0.3"
 hex = "0.4"
 regex = "1.11"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "stream"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

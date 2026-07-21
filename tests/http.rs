@@ -110,3 +110,66 @@ async fn falls_back_to_full_episode_query_and_resolves_direct_media() {
     assert_eq!(streams[0].provider, "S-mp4");
     assert_eq!(streams[0].url, "https://media.example/video.mp4");
 }
+
+#[tokio::test]
+async fn resolves_nested_clock_hls_with_provider_referer() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/bootstrap"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api"))
+        .respond_with(ResponseTemplate::new(400))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data":{"episode":{"sourceUrls":[{
+                "sourceName":"Default",
+                "sourceUrl":"/apivtwo/clock?id=fixture"
+            }]}}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/apivtwo/clock.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "Referer": "https://video-origin.example/",
+            "streams": [
+                {"type":"hls","url":format!("{}/master.m3u8", server.uri()),"hardsub_lang":"en-US"},
+                {"type":"hls","url":format!("{}/spanish.m3u8", server.uri()),"hardsub_lang":"es-ES"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/master.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720\n720/index.m3u8\n",
+        ))
+        .mount(&server)
+        .await;
+
+    let directory = tempdir().unwrap();
+    let client = AllAnimeClient::builder()
+        .api_url(format!("{}/api", server.uri()))
+        .base_url(server.uri())
+        .bootstrap_url(format!("{}/bootstrap", server.uri()))
+        .state_dir(directory.path())
+        .build()
+        .unwrap();
+    let streams = client
+        .streams("show", "6", TranslationType::Sub)
+        .await
+        .unwrap();
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].resolution, "720p");
+    assert_eq!(
+        streams[0].headers.referer.as_deref(),
+        Some("https://video-origin.example/")
+    );
+}

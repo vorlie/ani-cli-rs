@@ -1,17 +1,27 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::Arc,
     time::Duration,
 };
 
+use aes_gcm::{
+    Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
+};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::future::join_all;
+use p256::{
+    ecdsa::{Signature, SigningKey, signature::Signer},
+    elliptic_curve::rand_core::{OsRng, RngCore},
+};
 use regex::Regex;
-use reqwest::{Client, Method, Response, header};
+use reqwest::{Client, Method, RequestBuilder, Response, header};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, RwLock};
-use tracing::warn;
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::{
@@ -38,6 +48,7 @@ pub struct AllAnimeClientBuilder {
     base_url: String,
     bootstrap_url: String,
     referer: String,
+    provider_referer: String,
     user_agent: String,
     timeout: Duration,
     state_dir: Option<PathBuf>,
@@ -56,6 +67,7 @@ impl Default for AllAnimeClientBuilder {
             base_url: "https://allanime.day".into(),
             bootstrap_url: "https://mkissa.to".into(),
             referer: "https://mkissa.to/".into(),
+            provider_referer: "https://youtu-chan.com/".into(),
             user_agent: DEFAULT_AGENT.into(),
             timeout: Duration::from_secs(10),
             state_dir,
@@ -80,6 +92,10 @@ impl AllAnimeClientBuilder {
         self.referer = value.into();
         self
     }
+    pub fn provider_referer(mut self, value: impl Into<String>) -> Self {
+        self.provider_referer = value.into();
+        self
+    }
     pub fn timeout(mut self, value: Duration) -> Self {
         self.timeout = value;
         self
@@ -93,6 +109,7 @@ impl AllAnimeClientBuilder {
         let http = Client::builder()
             .timeout(self.timeout)
             .user_agent(&self.user_agent)
+            .cookie_store(true)
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()?;
         Ok(AllAnimeClient {
@@ -102,6 +119,7 @@ impl AllAnimeClientBuilder {
                 base_url: self.base_url,
                 bootstrap_url: self.bootstrap_url,
                 referer: self.referer,
+                provider_referer: self.provider_referer,
                 user_agent: self.user_agent,
                 state_dir: self.state_dir,
                 crypto: Mutex::new(None),
@@ -118,6 +136,7 @@ struct Inner {
     base_url: String,
     bootstrap_url: String,
     referer: String,
+    provider_referer: String,
     user_agent: String,
     state_dir: Option<PathBuf>,
     crypto: Mutex<Option<CryptoMaterial>>,
@@ -596,16 +615,27 @@ impl AllAnimeClient {
             let client = self.clone();
             let map = map.clone();
             Some(async move {
-                client
-                    .resolve_source(&decode_url(&source_url, &map), &source_name)
-                    .await
+                let decoded_url = decode_url(&source_url, &map);
+                debug!(
+                    %source_name,
+                    source_shape = %source_shape(&decoded_url),
+                    "resolving AllAnime source"
+                );
+                let result = client.resolve_source(&decoded_url, &source_name).await;
+                (source_name, result)
             })
         });
         let mut streams = Vec::new();
-        for result in join_all(tasks).await {
+        let mut failures = Vec::new();
+        for (provider, result) in join_all(tasks).await {
             match result {
-                Ok(mut links) => streams.append(&mut links),
-                Err(error) => warn!(%error, "skipped AllAnime source"),
+                Ok(mut links) if !links.is_empty() => streams.append(&mut links),
+                Ok(_) => failures.push(format!("{provider} (unsupported or empty response)")),
+                Err(error) => {
+                    let kind = provider_error_kind(&error);
+                    warn!(%provider, %kind, "skipped AllAnime source");
+                    failures.push(format!("{provider} ({kind})"));
+                }
             }
         }
         let mut seen = HashSet::new();
@@ -618,8 +648,14 @@ impl AllAnimeClient {
         });
         sort_streams(&mut streams);
         if streams.is_empty() {
+            let details = if failures.is_empty() {
+                "no source entries contained a URL".to_owned()
+            } else {
+                failures.join(", ")
+            };
             return Err(AniError::Unavailable(format!(
-                "episode {episode} is released but no supported sources resolved"
+                "episode {episode} is released but no supported sources resolved; extracted {} source entries: {details}",
+                sources.len()
             )));
         }
         Ok(streams)
@@ -633,6 +669,10 @@ impl AllAnimeClient {
         provider: &str,
         referer: Option<String>,
     ) -> StreamLink {
+        let origin = referer
+            .as_deref()
+            .and_then(request_origin)
+            .or_else(|| request_origin(&self.inner.provider_referer));
         StreamLink {
             url,
             resolution,
@@ -641,7 +681,7 @@ impl AllAnimeClient {
             downloadable: true,
             headers: RequestHeaders {
                 referer,
-                origin: Some(self.inner.referer.clone()),
+                origin,
                 extra: Default::default(),
             },
         }
@@ -652,6 +692,12 @@ impl AllAnimeClient {
         if source_url.is_empty() {
             return Ok(vec![]);
         }
+        let source_url = if source_url.starts_with("//") {
+            Cow::Owned(format!("https:{source_url}"))
+        } else {
+            Cow::Borrowed(source_url)
+        };
+        let source_url = source_url.as_ref();
         if Regex::new(r"(?i)^https?://(?:www\.)?mp4upload\.com/")
             .unwrap()
             .is_match(source_url)
@@ -659,16 +705,26 @@ impl AllAnimeClient {
             let html = self
                 .checked(
                     self.common_headers(self.inner.http.get(source_url))
+                        .header(header::REFERER, &self.inner.provider_referer)
                         .header(header::ACCEPT, "text/html,application/xhtml+xml"),
                 )
                 .await?
                 .text()
                 .await?;
             let regex = Regex::new(r#"(?i)\bsrc\s*:\s*["']([^"']+)["']"#).unwrap();
-            let Some(url) = regex
+            let embedded_urls = embedded_media_urls(&html);
+            debug!(
+                provider = "Mp4Upload",
+                response_bytes = html.len(),
+                embedded_media_count = embedded_urls.len(),
+                has_packed_script = html.contains("eval(function(p,a,c,k,e,d)"),
+                "inspected provider page"
+            );
+            let url = regex
                 .captures(&html)
                 .map(|c| c[1].replace(r"\/", "/").replace(r"\u0026", "&"))
-            else {
+                .or_else(|| embedded_urls.into_iter().next());
+            let Some(url) = url else {
                 return Ok(vec![]);
             };
             return Ok(vec![self.stream(
@@ -679,7 +735,139 @@ impl AllAnimeClient {
                 Some("https://www.mp4upload.com".into()),
             )]);
         }
-        if source_url.starts_with("http://") || source_url.starts_with("https://") {
+        if let Some(video_id) = okru_video_id(source_url) {
+            let embed_url = format!("https://ok.ru/videoembed/{video_id}");
+            let html = self
+                .checked(
+                    self.inner
+                        .http
+                        .get(&embed_url)
+                        .header(header::REFERER, &self.inner.provider_referer)
+                        .header(header::ACCEPT, "text/html,application/xhtml+xml"),
+                )
+                .await?
+                .text()
+                .await?;
+            let mut links = Vec::new();
+            let options = okru_player_options(&html);
+            debug!(
+                provider = "OK.ru",
+                response_bytes = html.len(),
+                has_data_options = html.contains("data-options"),
+                parsed_player_options = options.is_some(),
+                "inspected provider page"
+            );
+            if html.contains("copyrightsRestricted") || html.contains("data-movie-id=\"null\"") {
+                return Err(AniError::Unavailable(
+                    "OK.ru reports that the video is blocked or unavailable".into(),
+                ));
+            }
+            if let Some(options) = options {
+                if let Some(metadata) = okru_embedded_metadata(&options) {
+                    links.extend(okru_links(&metadata));
+                } else if let Some((metadata_url, location)) = okru_metadata_request(&options) {
+                    let mut body = url::form_urlencoded::Serializer::new(String::new());
+                    if let Some(location) = location {
+                        body.append_pair("st.location", &location);
+                    }
+                    let response = self
+                        .checked(
+                            self.inner
+                                .http
+                                .post(metadata_url)
+                                .header(header::REFERER, &embed_url)
+                                .header(header::ACCEPT, "application/json, text/plain, */*")
+                                .header(
+                                    header::CONTENT_TYPE,
+                                    "application/x-www-form-urlencoded; charset=UTF-8",
+                                )
+                                .body(body.finish()),
+                        )
+                        .await?;
+                    if let Ok(metadata) = response.json::<Value>().await {
+                        links.extend(okru_links(&metadata));
+                    }
+                }
+            }
+            if links.is_empty() {
+                links.extend(embedded_media_urls(&html).into_iter().map(|url| ClockLink {
+                    hls: url.to_ascii_lowercase().contains(".m3u8"),
+                    url,
+                    resolution: "Auto".into(),
+                }));
+            }
+            return Ok(links
+                .into_iter()
+                .map(|link| {
+                    self.stream(
+                        link.url,
+                        link.resolution,
+                        link.hls,
+                        "OK.ru",
+                        Some("https://ok.ru/".into()),
+                    )
+                })
+                .collect());
+        }
+        if is_filemoon_provider(source_url) {
+            return self.resolve_filemoon(source_url, provider).await;
+        }
+        if is_embedded_video_provider(source_url) {
+            let html = self
+                .checked(
+                    self.inner
+                        .http
+                        .get(source_url)
+                        .header(header::REFERER, &self.inner.provider_referer)
+                        .header(header::ACCEPT, "text/html,application/xhtml+xml"),
+                )
+                .await?
+                .text()
+                .await?;
+            let mut urls = embedded_media_urls(&html);
+            let frames = embedded_frame_urls(&html, source_url);
+            for frame_url in frames.iter().take(3) {
+                if let Ok(response) = self
+                    .checked(
+                        self.inner
+                            .http
+                            .get(frame_url)
+                            .header(header::REFERER, source_url)
+                            .header(header::ACCEPT, "text/html,application/xhtml+xml"),
+                    )
+                    .await
+                    && let Ok(frame_html) = response.text().await
+                {
+                    urls.extend(embedded_media_urls(&frame_html));
+                }
+            }
+            debug!(
+                provider,
+                response_bytes = html.len(),
+                embedded_media_count = urls.len(),
+                embedded_frame_count = frames.len(),
+                page_title = html_title(&html).unwrap_or_default(),
+                has_packed_script = html.contains("eval(function(p,a,c,k,e,d)"),
+                has_filemoon_api = html.contains("/api/videos/"),
+                has_adblocker_payload = html.contains("window.ADBLOCKER"),
+                has_cloudflare_challenge = html.contains("challenge-platform"),
+                appears_missing = html.to_ascii_lowercase().contains("file not found")
+                    || html.to_ascii_lowercase().contains("video not found")
+                    || html.to_ascii_lowercase().contains("file was deleted"),
+                "inspected embedded provider page"
+            );
+            return Ok(urls
+                .into_iter()
+                .map(|url| {
+                    let hls = url.to_ascii_lowercase().contains(".m3u8");
+                    self.stream(url, "Auto".into(), hls, provider, Some(source_url.into()))
+                })
+                .collect());
+        }
+        let internal_path = internal_clock_path(source_url, &self.inner.base_url);
+        if internal_path.is_none()
+            && (source_url.starts_with("http://") || source_url.starts_with("https://"))
+        {
             if !is_direct_media(source_url) {
                 return Ok(vec![]);
             }
@@ -689,7 +877,11 @@ impl AllAnimeClient {
             }
             if source_url.contains(".m3u8") {
                 return self
-                    .expand_hls(source_url, provider, Some(self.inner.referer.clone()))
+                    .expand_hls(
+                        source_url,
+                        provider,
+                        Some(self.inner.provider_referer.clone()),
+                    )
                     .await;
             }
             return Ok(vec![self.stream(
@@ -697,43 +889,43 @@ impl AllAnimeClient {
                 "Auto".into(),
                 false,
                 provider,
-                Some(self.inner.referer.clone()),
+                Some(self.inner.provider_referer.clone()),
             )]);
         }
-        if !(source_url.starts_with("/apivtwo/") || source_url.starts_with("/apiv2/")) {
+        let Some(internal_path) = internal_path else {
             return Ok(vec![]);
-        }
-        let clock = source_url.replace("/clock", "/clock.json");
+        };
+        let clock = clock_json_path(&internal_path);
         let endpoint = format!("{}{}", self.inner.base_url.trim_end_matches('/'), clock);
         let value: Value = self
             .checked(
                 self.common_headers(self.inner.http.get(endpoint))
-                    .header(header::ORIGIN, &self.inner.referer)
+                    .header(header::REFERER, &self.inner.provider_referer)
+                    .header(header::ORIGIN, &self.inner.provider_referer)
                     .header(header::ACCEPT, "application/json, text/plain, */*"),
             )
             .await?
             .json()
             .await?;
-        let links = value
-            .get("links")
-            .and_then(Value::as_array)
-            .ok_or_else(|| AniError::Provider("clock response had no links".into()))?;
+        let referer = find_string_key(&value, "referer")
+            .map(str::to_owned)
+            .unwrap_or_else(|| self.inner.provider_referer.clone());
+        let links = clock_links(&value);
+        if links.is_empty() {
+            return Err(AniError::Provider(
+                "clock response had no recognized media links".into(),
+            ));
+        }
         let mut result = Vec::new();
         for item in links {
-            let Some(url) = item.get("link").and_then(Value::as_str) else {
-                continue;
-            };
-            let resolution = item
-                .get("resolutionStr")
-                .and_then(Value::as_str)
-                .unwrap_or("Auto");
-            let hls =
-                item.get("hls").and_then(Value::as_bool).unwrap_or(false) || url.contains(".m3u8");
+            let url = item.url.as_str();
+            let resolution = item.resolution.as_str();
+            let hls = item.hls;
             if url.contains("repackager.wixmp.com") {
-                result.extend(self.expand_wix(url, provider));
+                result.extend(self.expand_wix(url, provider, Some(referer.clone())));
             } else if hls {
                 result.extend(
-                    self.expand_hls(url, provider, Some(self.inner.referer.clone()))
+                    self.expand_hls(url, provider, Some(referer.clone()))
                         .await
                         .unwrap_or_else(|_| {
                             vec![self.stream(
@@ -741,7 +933,7 @@ impl AllAnimeClient {
                                 resolution.into(),
                                 true,
                                 provider,
-                                Some(self.inner.referer.clone()),
+                                Some(referer.clone()),
                             )]
                         }),
                 );
@@ -751,11 +943,175 @@ impl AllAnimeClient {
                     resolution.into(),
                     false,
                     provider,
-                    Some(self.inner.referer.clone()),
+                    Some(referer.clone()),
                 ));
             }
         }
         Ok(result)
+    }
+
+    async fn resolve_filemoon(&self, source_url: &str, provider: &str) -> Result<Vec<StreamLink>> {
+        let source = Url::parse(source_url)?;
+        let segments: Vec<_> = source
+            .path_segments()
+            .map(|segments| segments.collect())
+            .unwrap_or_default();
+        let (link_type, video_id) = segments
+            .windows(2)
+            .find(|pair| {
+                matches!(pair[0], "e" | "d") && pair[1].chars().all(|c| c.is_ascii_alphanumeric())
+            })
+            .map(|pair| (pair[0], pair[1]))
+            .ok_or_else(|| AniError::Provider("Filemoon embed had no video ID".into()))?;
+        let source_origin = request_origin(source_url)
+            .ok_or_else(|| AniError::Provider("Filemoon embed had no origin".into()))?;
+
+        let details: Value = self
+            .checked(filemoon_request(
+                self.inner.http.get(format!(
+                    "{source_origin}/api/videos/{video_id}/embed/details"
+                )),
+                source_url,
+                &source_origin,
+            ))
+            .await
+            .map_err(|_| AniError::Provider("Filemoon details request failed".into()))?
+            .json()
+            .await?;
+        let embed_frame_url = details
+            .get("embed_frame_url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon details omitted embed_frame_url".into()))?;
+        let playback_origin = request_origin(embed_frame_url)
+            .ok_or_else(|| AniError::Provider("Filemoon playback frame had no origin".into()))?;
+
+        let challenge: Value = self
+            .checked(filemoon_request(
+                self.inner
+                    .http
+                    .post(format!("{playback_origin}/api/videos/access/challenge")),
+                embed_frame_url,
+                &playback_origin,
+            ))
+            .await
+            .map_err(|_| AniError::Provider("Filemoon challenge request failed".into()))?
+            .json()
+            .await?;
+        let challenge_id = challenge
+            .get("challenge_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon challenge omitted challenge_id".into()))?;
+        let nonce = challenge
+            .get("nonce")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon challenge omitted nonce".into()))?;
+        let (signature, public_key) = filemoon_attestation(nonce);
+        let viewer_id = random_hex_id();
+        let device_id = random_hex_id();
+        let attest_payload = json!({
+            "viewer_id": viewer_id,
+            "device_id": device_id,
+            "challenge_id": challenge_id,
+            "nonce": nonce,
+            "signature": signature,
+            "public_key": public_key,
+            "client": {
+                "user_agent": self.inner.user_agent,
+                "architecture": "x86",
+                "bitness": "64",
+                "platform": "Windows",
+                "platform_version": "10.0.0",
+                "pixel_ratio": 1.0,
+                "screen_width": 1920,
+                "screen_height": 1080,
+                "languages": ["en-US"]
+            },
+            "storage": {
+                "cookie": viewer_id,
+                "local_storage": viewer_id,
+                "indexed_db": format!("{viewer_id}:{device_id}"),
+                "cache_storage": format!("{viewer_id}:{device_id}")
+            },
+            "attributes": { "entropy": "high" }
+        });
+        let attest: Value = self
+            .checked(
+                filemoon_request(
+                    self.inner
+                        .http
+                        .post(format!("{playback_origin}/api/videos/access/attest")),
+                    embed_frame_url,
+                    &playback_origin,
+                )
+                .json(&attest_payload),
+            )
+            .await
+            .map_err(|_| AniError::Provider("Filemoon attestation request failed".into()))?
+            .json()
+            .await?;
+        let token = attest
+            .get("token")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon attestation omitted token".into()))?;
+        let viewer_id = attest
+            .get("viewer_id")
+            .and_then(Value::as_str)
+            .unwrap_or(&viewer_id);
+        let device_id = attest
+            .get("device_id")
+            .and_then(Value::as_str)
+            .unwrap_or(&device_id);
+        let confidence = attest
+            .get("confidence")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| AniError::Provider("Filemoon attestation omitted confidence".into()))?;
+        let playback_payload = json!({
+            "fingerprint": {
+                "token": token,
+                "viewer_id": viewer_id,
+                "device_id": device_id,
+                "confidence": confidence
+            }
+        });
+        let mut request = filemoon_request(
+            self.inner.http.post(format!(
+                "{playback_origin}/api/videos/{video_id}/embed/playback"
+            )),
+            embed_frame_url,
+            &playback_origin,
+        )
+        .json(&playback_payload);
+        if link_type == "e" {
+            request = request.header("X-Embed-Parent", source_url);
+        }
+        let playback: Value = self
+            .checked(request)
+            .await
+            .map_err(|_| AniError::Provider("Filemoon playback request failed".into()))?
+            .json()
+            .await?;
+        let decrypted = decrypt_filemoon_playback(
+            playback
+                .get("playback")
+                .ok_or_else(|| AniError::Provider("Filemoon response omitted playback".into()))?,
+        )?;
+        let streams = decrypted
+            .get("sources")
+            .and_then(Value::as_array)
+            .ok_or_else(|| AniError::Provider("Filemoon playback omitted sources".into()))?;
+        Ok(streams
+            .iter()
+            .filter_map(|source| source.get("url").and_then(Value::as_str))
+            .map(|url| {
+                self.stream(
+                    url.into(),
+                    "Auto".into(),
+                    url.to_ascii_lowercase().contains(".m3u8"),
+                    provider,
+                    Some(embed_frame_url.into()),
+                )
+            })
+            .collect())
     }
 
     async fn is_reachable(&self, url: &str) -> bool {
@@ -763,14 +1119,14 @@ impl AllAnimeClient {
             .http
             .request(Method::GET, url)
             .header(header::RANGE, "bytes=0-0")
-            .header(header::REFERER, &self.inner.referer)
+            .header(header::REFERER, &self.inner.provider_referer)
             .send()
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false)
     }
 
-    fn expand_wix(&self, url: &str, provider: &str) -> Vec<StreamLink> {
+    fn expand_wix(&self, url: &str, provider: &str, referer: Option<String>) -> Vec<StreamLink> {
         let base = Regex::new(r"repackager\.wixmp\.com/")
             .unwrap()
             .replace(url, "");
@@ -780,13 +1136,7 @@ impl AllAnimeClient {
             .into_owned();
         let regex = Regex::new(r",([^/]*),/mp4").unwrap();
         let Some(qualities) = regex.captures(url).map(|c| c[1].to_owned()) else {
-            return vec![self.stream(
-                url.into(),
-                "Auto".into(),
-                false,
-                provider,
-                Some(self.inner.referer.clone()),
-            )];
+            return vec![self.stream(url.into(), "Auto".into(), false, provider, referer)];
         };
         let replace = Regex::new(r",[^/]*").unwrap();
         qualities
@@ -797,7 +1147,7 @@ impl AllAnimeClient {
                     quality.into(),
                     false,
                     provider,
-                    Some(self.inner.referer.clone()),
+                    referer.clone(),
                 )
             })
             .collect()
@@ -855,6 +1205,127 @@ impl AllAnimeClient {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ClockLink {
+    url: String,
+    resolution: String,
+    hls: bool,
+}
+
+fn internal_clock_path(source_url: &str, base_url: &str) -> Option<String> {
+    if source_url.starts_with("/apivtwo/") || source_url.starts_with("/apiv2/") {
+        return Some(source_url.to_owned());
+    }
+    let source = Url::parse(source_url).ok()?;
+    if !source.path().starts_with("/apivtwo/") && !source.path().starts_with("/apiv2/") {
+        return None;
+    }
+    let base_host = Url::parse(base_url).ok()?.host_str()?.to_ascii_lowercase();
+    let source_host = source.host_str()?.to_ascii_lowercase();
+    if source_host != base_host && source_host != "allanime.day" {
+        return None;
+    }
+    let mut path = source.path().to_owned();
+    if let Some(query) = source.query() {
+        path.push('?');
+        path.push_str(query);
+    }
+    Some(path)
+}
+
+fn clock_json_path(path: &str) -> String {
+    if path.contains("/clock.json") {
+        path.to_owned()
+    } else {
+        path.replacen("/clock", "/clock.json", 1)
+    }
+}
+
+fn find_string_key<'a>(value: &'a Value, wanted: &str) -> Option<&'a str> {
+    match value {
+        Value::Object(object) => object
+            .iter()
+            .find(|(key, value)| key.eq_ignore_ascii_case(wanted) && value.is_string())
+            .and_then(|(_, value)| value.as_str())
+            .or_else(|| {
+                object
+                    .values()
+                    .find_map(|value| find_string_key(value, wanted))
+            }),
+        Value::Array(values) => values
+            .iter()
+            .find_map(|value| find_string_key(value, wanted)),
+        _ => None,
+    }
+}
+
+fn clock_links(value: &Value) -> Vec<ClockLink> {
+    fn visit(value: &Value, links: &mut Vec<ClockLink>) {
+        match value {
+            Value::Object(object) => {
+                let url = object
+                    .get("link")
+                    .or_else(|| object.get("url"))
+                    .and_then(Value::as_str);
+                if let Some(url) = url.filter(|url| is_direct_media(url)) {
+                    let language = object.get("hardsub_lang").and_then(Value::as_str);
+                    if language.is_none_or(|language| language.eq_ignore_ascii_case("en-US")) {
+                        let resolution = object
+                            .get("resolutionStr")
+                            .or_else(|| object.get("resolution"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("Auto");
+                        let hls_marker = object.get("hls").is_some_and(|value| {
+                            value.as_bool().unwrap_or(false)
+                                || value
+                                    .as_str()
+                                    .is_some_and(|value| value.eq_ignore_ascii_case("hls"))
+                        }) || object
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .is_some_and(|value| value.eq_ignore_ascii_case("hls"));
+                        links.push(ClockLink {
+                            url: url.to_owned(),
+                            resolution: resolution.to_owned(),
+                            hls: hls_marker || url.to_ascii_lowercase().contains(".m3u8"),
+                        });
+                    }
+                }
+                for child in object.values() {
+                    visit(child, links);
+                }
+            }
+            Value::Array(values) => {
+                for child in values {
+                    visit(child, links);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut links = Vec::new();
+    visit(value, &mut links);
+    let mut seen = HashSet::new();
+    links.retain(|link| seen.insert(link.url.clone()));
+    links
+}
+
+fn provider_error_kind(error: &AniError) -> String {
+    match error {
+        AniError::Network(_) => "network request failed".into(),
+        AniError::GraphQl(_) => "provider returned an HTTP error".into(),
+        AniError::RateLimited { .. } => "rate limited".into(),
+        AniError::Unavailable(_) => "provider reports video unavailable".into(),
+        AniError::Provider(message) if message.starts_with("Filemoon ") => message.clone(),
+        AniError::Provider(_) | AniError::Json(_) | AniError::Url(_) => {
+            "malformed provider data".into()
+        }
+        AniError::Decryption(_) => "decryption failed".into(),
+        _ => "source resolution failed".into(),
+    }
+}
+
 fn is_direct_media(url: &str) -> bool {
     let url = url.to_ascii_lowercase();
     [
@@ -866,6 +1337,348 @@ fn is_direct_media(url: &str) -> bool {
     ]
     .iter()
     .any(|needle| url.contains(needle))
+}
+
+fn embedded_media_urls(html: &str) -> Vec<String> {
+    let decoded = html
+        .replace(r"\/", "/")
+        .replace(r"\u0026", "&")
+        .replace("&quot;", "\"")
+        .replace("&#34;", "\"")
+        .replace("&amp;", "&");
+    let regex = Regex::new(r#"https?://[^\s"'<>\\]+"#).expect("valid embedded URL regex");
+    let mut seen = HashSet::new();
+    regex
+        .find_iter(&decoded)
+        .map(|value| value.as_str().trim_end_matches([')', ']', '}', ',', ';']))
+        .filter(|url| is_direct_media(url))
+        .filter(|url| seen.insert((*url).to_owned()))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn embedded_frame_urls(html: &str, page_url: &str) -> Vec<String> {
+    let decoded = html_unescape(html).replace(r"\/", "/");
+    let regex = Regex::new(
+        r#"(?is)(?:<iframe[^>]+src\s*=\s*|(?:window\.)?location(?:\.href)?\s*=\s*)[\"']([^\"']+)[\"']"#,
+    )
+    .expect("valid embedded frame regex");
+    let Ok(base) = Url::parse(page_url) else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    regex
+        .captures_iter(&decoded)
+        .filter_map(|capture| base.join(capture.get(1)?.as_str()).ok())
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .map(|url| url.to_string())
+        .filter(|url| seen.insert(url.clone()))
+        .collect()
+}
+
+fn html_title(html: &str) -> Option<String> {
+    let regex = Regex::new(r"(?is)<title[^>]*>(.*?)</title>").unwrap();
+    let title = regex.captures(html)?.get(1)?.as_str();
+    Some(html_unescape(
+        &Regex::new(r"<[^>]+>").unwrap().replace_all(title, ""),
+    ))
+}
+
+fn okru_video_id(source_url: &str) -> Option<String> {
+    let url = Url::parse(source_url).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    if host != "ok.ru" && !host.ends_with(".ok.ru") {
+        return None;
+    }
+    let mut segments = url.path_segments()?;
+    if segments.next()? != "videoembed" {
+        return None;
+    }
+    segments
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn is_embedded_video_provider(source_url: &str) -> bool {
+    let Ok(url) = Url::parse(source_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    matches!(
+        host.trim_start_matches("www.")
+            .to_ascii_lowercase()
+            .as_str(),
+        "bysekoze.com" | "listeamed.net"
+    )
+}
+
+fn is_filemoon_provider(source_url: &str) -> bool {
+    let Ok(url) = Url::parse(source_url) else {
+        return false;
+    };
+    let host = url
+        .host_str()
+        .unwrap_or_default()
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
+    matches!(
+        host.as_str(),
+        "filemoon.site"
+            | "filemoon.sx"
+            | "bf0skv.org"
+            | "bysejikuar.com"
+            | "moflix-stream.link"
+            | "bysezoxexe.com"
+            | "bysebuho.com"
+            | "bysekoze.com"
+            | "bysesayeveum.com"
+    )
+}
+
+fn filemoon_request(request: RequestBuilder, referer: &str, origin: &str) -> RequestBuilder {
+    request
+        .header(header::REFERER, referer)
+        .header(header::ORIGIN, origin)
+        .header(header::ACCEPT, "application/json, text/plain, */*")
+}
+
+fn random_hex_id() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+fn filemoon_attestation(nonce: &str) -> (String, Value) {
+    let signing_key = SigningKey::random(&mut OsRng);
+    let verifying_key = signing_key.verifying_key();
+    let point = verifying_key.to_encoded_point(false);
+    let signature: Signature = signing_key.sign(nonce.as_bytes());
+    let x = point.x().expect("uncompressed P-256 point has x");
+    let y = point.y().expect("uncompressed P-256 point has y");
+    (
+        URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+        json!({
+            "crv": "P-256",
+            "ext": true,
+            "key_ops": ["verify"],
+            "kty": "EC",
+            "x": URL_SAFE_NO_PAD.encode(x),
+            "y": URL_SAFE_NO_PAD.encode(y)
+        }),
+    )
+}
+
+fn decode_base64_url(value: &str) -> Result<Vec<u8>> {
+    URL_SAFE_NO_PAD
+        .decode(value)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(value))
+        .map_err(|error| AniError::Provider(format!("invalid Filemoon Base64: {error}")))
+}
+
+fn decrypt_filemoon_playback(playback: &Value) -> Result<Value> {
+    let iv = decode_base64_url(
+        playback
+            .get("iv")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon playback omitted iv".into()))?,
+    )?;
+    if iv.len() != 12 {
+        return Err(AniError::Provider(
+            "Filemoon playback used an invalid GCM nonce".into(),
+        ));
+    }
+    let payload = decode_base64_url(
+        playback
+            .get("payload")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AniError::Provider("Filemoon playback omitted payload".into()))?,
+    )?;
+    let key_parts = playback
+        .get("key_parts")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AniError::Provider("Filemoon playback omitted key_parts".into()))?;
+    let mut key = Vec::new();
+    for part in key_parts {
+        key.extend(decode_base64_url(part.as_str().ok_or_else(|| {
+            AniError::Provider("Filemoon key part was not a string".into())
+        })?)?);
+    }
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| AniError::Provider("Filemoon playback used an invalid AES key".into()))?;
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(&iv), payload.as_ref())
+        .map_err(|_| AniError::Provider("Filemoon playback decryption failed".into()))?;
+    serde_json::from_slice(&plaintext).map_err(AniError::from)
+}
+
+fn okru_links(value: &Value) -> Vec<ClockLink> {
+    fn visit(value: &Value, links: &mut Vec<ClockLink>) {
+        match value {
+            Value::Object(object) => {
+                if let Some(videos) = object.get("videos").and_then(Value::as_array) {
+                    for video in videos {
+                        let Some(url) = video.get("url").and_then(Value::as_str) else {
+                            continue;
+                        };
+                        let name = video.get("name").and_then(Value::as_str).unwrap_or("Auto");
+                        let resolution = match name.to_ascii_lowercase().as_str() {
+                            "mobile" => "144p",
+                            "lowest" => "240p",
+                            "low" => "360p",
+                            "sd" => "480p",
+                            "hd" => "720p",
+                            "full" => "1080p",
+                            "quad" => "1440p",
+                            "ultra" => "2160p",
+                            _ => name,
+                        };
+                        links.push(ClockLink {
+                            url: url.to_owned(),
+                            resolution: resolution.to_owned(),
+                            hls: url.to_ascii_lowercase().contains(".m3u8"),
+                        });
+                    }
+                }
+                for child in object.values() {
+                    visit(child, links);
+                }
+            }
+            Value::Array(values) => {
+                for child in values {
+                    visit(child, links);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut links = Vec::new();
+    visit(value, &mut links);
+    let mut seen = HashSet::new();
+    links.retain(|link| seen.insert(link.url.clone()));
+    links
+}
+
+fn html_unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#34;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+fn okru_player_options(html: &str) -> Option<Value> {
+    let double_quoted = Regex::new(r#"(?is)data-options\s*=\s*\"([^\"]*)\""#).unwrap();
+    let single_quoted = Regex::new(r#"(?is)data-options\s*=\s*'([^']*)'"#).unwrap();
+    let encoded = double_quoted
+        .captures(html)
+        .or_else(|| single_quoted.captures(html))?
+        .get(1)?
+        .as_str();
+    serde_json::from_str(&html_unescape(encoded)).ok()
+}
+
+fn okru_flashvars(options: &Value) -> Option<&serde_json::Map<String, Value>> {
+    options
+        .get("flashvars")
+        .or_else(|| options.pointer("/player/flashvars"))?
+        .as_object()
+}
+
+fn okru_embedded_metadata(options: &Value) -> Option<Value> {
+    let metadata = okru_flashvars(options)?.get("metadata")?;
+    match metadata {
+        Value::String(value) => serde_json::from_str(value).ok(),
+        Value::Object(_) => Some(metadata.clone()),
+        _ => None,
+    }
+}
+
+fn okru_metadata_request(options: &Value) -> Option<(String, Option<String>)> {
+    let flashvars = okru_flashvars(options)?;
+    let metadata_url = flashvars.get("metadataUrl")?.as_str()?;
+    let metadata_url = percent_decode(metadata_url);
+    let location = flashvars
+        .get("location")
+        .and_then(Value::as_str)
+        .map(percent_decode);
+    Some((metadata_url, location))
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let (Some(high), Some(low)) =
+                (hex_digit(bytes[index + 1]), hex_digit(bytes[index + 2]))
+        {
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn source_shape(source_url: &str) -> String {
+    let source_url = source_url.trim();
+    if source_url.starts_with("/apivtwo/") {
+        return "/apivtwo/…".into();
+    }
+    if source_url.starts_with("/apiv2/") {
+        return "/apiv2/…".into();
+    }
+    let normalized = source_url
+        .strip_prefix("//")
+        .map(|value| format!("https://{value}"))
+        .unwrap_or_else(|| source_url.to_owned());
+    if let Ok(url) = Url::parse(&normalized) {
+        let first_segment = url.path_segments().and_then(|mut values| values.next());
+        return match first_segment.filter(|value| !value.is_empty()) {
+            Some(segment) => format!(
+                "{}://{}/{segment}/…",
+                url.scheme(),
+                url.host_str().unwrap_or("?"),
+                segment = segment
+                    .split(['-', '_'])
+                    .next()
+                    .filter(|value| value.len() <= 16)
+                    .unwrap_or("path")
+            ),
+            None => format!("{}://{}/", url.scheme(), url.host_str().unwrap_or("?")),
+        };
+    }
+    "unrecognized URL shape".into()
+}
+
+fn request_origin(referer: &str) -> Option<String> {
+    let url = Url::parse(referer).ok()?;
+    let host = url.host_str()?;
+    let mut origin = format!("{}://{host}", url.scheme());
+    if let Some(port) = url.port() {
+        origin.push(':');
+        origin.push_str(&port.to_string());
+    }
+    Some(origin)
 }
 
 fn graphql_error_text(value: &Value) -> Option<String> {
@@ -901,7 +1714,20 @@ fn reject_graphql_errors(value: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AllAnimeClient, graphql_rate_limit_seconds};
+    use serde_json::json;
+
+    use aes_gcm::{
+        Aes256Gcm, Nonce,
+        aead::{Aead, KeyInit},
+    };
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    use super::{
+        AllAnimeClient, clock_json_path, clock_links, decrypt_filemoon_playback,
+        embedded_frame_urls, embedded_media_urls, graphql_rate_limit_seconds, internal_clock_path,
+        okru_embedded_metadata, okru_links, okru_metadata_request, okru_player_options,
+        okru_video_id, request_origin,
+    };
 
     #[test]
     fn extracts_graphql_rate_limit_delay() {
@@ -918,10 +1744,166 @@ mod tests {
         let links = client.expand_wix(
             "https://repackager.wixmp.com/video.wixstatic.com/video/id/,360p,720p,1080p,/mp4/file.mp4.urlset/master.m3u8",
             "Default",
+            Some("https://allanime.example/".into()),
         );
         assert_eq!(
             links[2].url,
             "https://video.wixstatic.com/video/id/1080p/mp4/file.mp4"
+        );
+        assert_eq!(
+            links[2].headers.referer.as_deref(),
+            Some("https://allanime.example/")
+        );
+    }
+
+    #[test]
+    fn accepts_relative_and_same_host_absolute_clock_urls() {
+        assert_eq!(
+            internal_clock_path("/apivtwo/clock?id=token", "https://allanime.day"),
+            Some("/apivtwo/clock?id=token".into())
+        );
+        assert_eq!(
+            internal_clock_path(
+                "https://allanime.day/apiv2/clock.json?id=token",
+                "https://allanime.day"
+            ),
+            Some("/apiv2/clock.json?id=token".into())
+        );
+        assert_eq!(
+            clock_json_path("/apivtwo/clock?id=token"),
+            "/apivtwo/clock.json?id=token"
+        );
+        assert_eq!(
+            clock_json_path("/apivtwo/clock.json?id=token"),
+            "/apivtwo/clock.json?id=token"
+        );
+    }
+
+    #[test]
+    fn extracts_legacy_links_and_nested_english_hls() {
+        let payload = json!({
+            "links": [{"link":"https://media.example/video.mp4","resolutionStr":"720p"}],
+            "alternatives": [
+                {"type":"hls","url":"https://media.example/en/master.m3u8","hardsub_lang":"en-US"},
+                {"type":"hls","url":"https://media.example/es/master.m3u8","hardsub_lang":"es-ES"}
+            ]
+        });
+        let links = clock_links(&payload);
+        assert_eq!(links.len(), 2);
+        let direct = links
+            .iter()
+            .find(|link| link.url.ends_with("video.mp4"))
+            .unwrap();
+        assert_eq!(direct.resolution, "720p");
+        assert!(!direct.hls);
+        let hls = links.iter().find(|link| link.hls).unwrap();
+        assert_eq!(hls.url, "https://media.example/en/master.m3u8");
+    }
+
+    #[test]
+    fn derives_origin_from_provider_referer() {
+        assert_eq!(
+            request_origin("https://youtu-chan.com/watch/episode"),
+            Some("https://youtu-chan.com".into())
+        );
+        assert_eq!(
+            request_origin("http://127.0.0.1:8787/watch"),
+            Some("http://127.0.0.1:8787".into())
+        );
+    }
+
+    #[test]
+    fn extracts_escaped_embedded_media_urls() {
+        let html = r#"<script>player.setup({file:\"https:\/\/media.example\/video.mp4?x=1\u0026y=2\"});</script>"#;
+        assert_eq!(
+            embedded_media_urls(html),
+            vec!["https://media.example/video.mp4?x=1&y=2"]
+        );
+    }
+
+    #[test]
+    fn resolves_relative_embedded_frames() {
+        let html = r#"<iframe src="/player/video"></iframe>"#;
+        assert_eq!(
+            embedded_frame_urls(html, "https://provider.example/e/id"),
+            vec!["https://provider.example/player/video"]
+        );
+    }
+
+    #[test]
+    fn decrypts_filemoon_playback_envelope() {
+        let key = [7_u8; 32];
+        let iv = [9_u8; 12];
+        let plaintext = br#"{"sources":[{"url":"https://media.example/master.m3u8"}]}"#;
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let payload = cipher
+            .encrypt(Nonce::from_slice(&iv), plaintext.as_ref())
+            .unwrap();
+        let envelope = json!({
+            "iv": URL_SAFE_NO_PAD.encode(iv),
+            "payload": URL_SAFE_NO_PAD.encode(payload),
+            "key_parts": [
+                URL_SAFE_NO_PAD.encode(&key[..16]),
+                URL_SAFE_NO_PAD.encode(&key[16..])
+            ]
+        });
+        let value = decrypt_filemoon_playback(&envelope).unwrap();
+        assert_eq!(
+            value
+                .pointer("/sources/0/url")
+                .and_then(serde_json::Value::as_str),
+            Some("https://media.example/master.m3u8")
+        );
+    }
+
+    #[test]
+    fn parses_okru_video_metadata() {
+        assert_eq!(
+            okru_video_id("https://ok.ru/videoembed/123456"),
+            Some("123456".into())
+        );
+        let links = okru_links(&json!({
+            "movie": {"url":"https://ok.ru/video/123"},
+            "videos": [
+                {"name":"sd","url":"https://media.example/video?id=1"},
+                {"name":"full","url":"https://media.example/video?id=2"}
+            ]
+        }));
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].resolution, "480p");
+        assert_eq!(links[1].resolution, "1080p");
+    }
+
+    #[test]
+    fn parses_okru_embedded_player_metadata() {
+        let metadata = r#"{"videos":[{"name":"hd","url":"https://media.example/720"}]}"#;
+        let options = serde_json::to_string(&json!({
+            "flashvars": { "metadata": metadata }
+        }))
+        .unwrap()
+        .replace('"', "&quot;");
+        let html = format!(r#"<div data-options="{options}"></div>"#);
+        let options = okru_player_options(&html).unwrap();
+        let metadata = okru_embedded_metadata(&options).unwrap();
+        let links = okru_links(&metadata);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].resolution, "720p");
+    }
+
+    #[test]
+    fn parses_okru_remote_metadata_request() {
+        let options = json!({
+            "flashvars": {
+                "metadataUrl": "https%3A%2F%2Fok.ru%2Fvideo%2Fmeta",
+                "location": "https%3A%2F%2Fok.ru%2Fvideoembed%2F123"
+            }
+        });
+        assert_eq!(
+            okru_metadata_request(&options),
+            Some((
+                "https://ok.ru/video/meta".into(),
+                Some("https://ok.ru/videoembed/123".into())
+            ))
         );
     }
 }
