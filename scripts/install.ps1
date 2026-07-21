@@ -27,11 +27,9 @@ if ($env:ANI_CLI_RS_WAIT_FOR_PID) {
     Wait-Process -Id ([int]$env:ANI_CLI_RS_WAIT_FOR_PID) -ErrorAction SilentlyContinue
 }
 $repository = "vorlie/ani-cli-rs"
-$target = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    "X64" { "x86_64-pc-windows-msvc" }
-    "Arm64" { "aarch64-pc-windows-msvc" }
-    default { throw "ani-cli-rs does not publish a Windows build for this architecture." }
-}
+# ani-cli-rs currently publishes one Windows archive. Windows 11 on ARM64 can
+# run this x64 build through its compatibility layer.
+$target = "x86_64-pc-windows-msvc"
 
 $headers = @{ Accept = "application/vnd.github+json"; "User-Agent" = "ani-cli-rs-installer" }
 $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repository/releases/latest" -Headers $headers
