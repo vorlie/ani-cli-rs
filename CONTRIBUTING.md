@@ -36,6 +36,8 @@ Normal tests must remain deterministic and must not require live AllAnime access
 
 ## Scraper changes
 
+Read [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md) before changing the request, crypto, cipher, or provider-resolution pipeline.
+
 - Include sanitized fixtures for new response shapes and encryption paths.
 - Test partial provider failures instead of assuming every extracted source works.
 - Preserve required request headers in `StreamLink` rather than constructing shell command strings.
@@ -54,4 +56,3 @@ Normal tests must remain deterministic and must not require live AllAnime access
 Use concise, imperative commit messages. Conventional prefixes such as `fix:`, `feat:`, `docs:`, `test:`, and `chore:` are encouraged but not mandatory.
 
 Fill out the pull-request template, link the relevant issue, and describe manual testing. Contributions are accepted under the repository's GPL-3.0-only license.
-
