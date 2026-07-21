@@ -2,8 +2,8 @@ use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
     AllAnimeClient, AniError, DownloadOptions, HistoryEntry, HistoryStore, Player, PlayerKind,
-    PlayerOptions, Result, SearchOptions, SearchResult, TranslationType, choose_quality,
-    download_stream, expand_episode_selection,
+    PlayerOptions, Result, SearchOptions, SearchResult, StreamLink, TranslationType,
+    choose_quality, download_stream, expand_episode_selection,
 };
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
@@ -700,23 +700,54 @@ struct PlaybackContext<'a> {
     player: &'a Player,
 }
 
-async fn play_or_download(
+#[derive(Debug)]
+struct PreparedEpisode {
+    episode: String,
+    stream: StreamLink,
+}
+
+async fn prepare_episode(
     context: &PlaybackContext<'_>,
     episode: &str,
     quality: &str,
-    download: bool,
-) -> Result<()> {
+) -> Result<PreparedEpisode> {
     println!("Fetching {} episode {episode}...", context.show.name);
     let streams = context
         .client
         .streams(&context.show.id, episode, context.mode)
         .await?;
     let stream = choose_quality(&streams, quality)
+        .cloned()
         .ok_or_else(|| AniError::Unavailable("no streams".into()))?;
-    let title = format!("{} Episode {episode}", clean_title(&context.show.name));
+    Ok(PreparedEpisode {
+        episode: episode.into(),
+        stream,
+    })
+}
+
+async fn play_or_download(
+    context: &PlaybackContext<'_>,
+    episode: &str,
+    quality: &str,
+    download: bool,
+) -> Result<()> {
+    let prepared = prepare_episode(context, episode, quality).await?;
+    execute_prepared_episode(context, &prepared, download).await
+}
+
+async fn execute_prepared_episode(
+    context: &PlaybackContext<'_>,
+    prepared: &PreparedEpisode,
+    download: bool,
+) -> Result<()> {
+    let title = format!(
+        "{} Episode {}",
+        clean_title(&context.show.name),
+        prepared.episode
+    );
     if download {
         let path = download_stream(
-            stream,
+            &prepared.stream,
             &DownloadOptions {
                 directory: context.download_directory.clone(),
                 filename: title,
@@ -725,12 +756,12 @@ async fn play_or_download(
         .await?;
         println!("Saved {}", path.display());
     } else {
-        context.player.play(stream, &title).await?;
+        context.player.play(&prepared.stream, &title).await?;
     }
     context
         .history
         .update(HistoryEntry {
-            episode: episode.into(),
+            episode: prepared.episode.clone(),
             show_id: context.show.id.clone(),
             title: context.show.name.clone(),
         })
