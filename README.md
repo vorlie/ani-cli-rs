@@ -107,6 +107,8 @@ Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncp
 
 For faster downloads, install `aria2c` through your operating system's package manager and ensure it is available in `PATH`. Direct media then uses up to 16 parallel connections with resume support; providers known to enforce lower connection limits, such as Mp4Upload, use a safer limit automatically. HLS downloads use yt-dlp with aria2c as its external downloader while retaining yt-dlp's 16 concurrent fragment setting. If aria2c fails or is unavailable, direct media falls back to the built-in resumable `.part` downloader; HLS retries with yt-dlp alone and then FFmpeg. Each available downloader reports its own size, speed, percentage, and ETA information.
 
+When present, the user's aria2 configuration is loaded explicitly from `%USERPROFILE%\.aria2\aria2.conf` on Windows or `$HOME/.aria2/aria2.conf` on Unix. Command-line options required for safe resume, output naming, and provider headers still take precedence over conflicting configuration entries.
+
 ## Compatible workflow
 
 ```console
@@ -187,6 +189,8 @@ ani-cli-rs update
 ```
 
 `debug` reports dynamic/fallback crypto bootstrap material. `refresh-cipher-map` validates and caches the URL decoder from the latest upstream ani-cli release. Set `RUST_LOG=warn` or `RUST_LOG=debug` for scraper diagnostics.
+
+Contributors can find the complete request, decryption, URL decoding, provider resolution, header, and fixture workflow in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md).
 
 `-U/--update` and `update` check GitHub Releases, download the installer from the exact release tag, and use the existing checksum-verifying installation flow. `update --check` only reports whether a newer release exists. On Windows, installation continues after the current executable exits so it can be replaced safely.
 

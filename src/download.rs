@@ -115,6 +115,12 @@ fn yt_dlp_args(stream: &StreamLink, target: &Path, aria2: bool) -> Vec<String> {
     let mut args = Vec::new();
     if aria2 {
         args.extend(["--downloader".into(), "aria2c".into()]);
+        if let Some(config) = aria2_config_path() {
+            args.extend([
+                "--downloader-args".into(),
+                format!("aria2c:--conf-path=\"{}\"", config.to_string_lossy()),
+            ]);
+        }
     }
     append_yt_dlp_headers(&mut args, stream);
     args.extend([
@@ -196,6 +202,9 @@ fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
         format!("--dir={}", directory.to_string_lossy()),
         format!("--out={filename}"),
     ];
+    if let Some(config) = aria2_config_path() {
+        args.push(format!("--conf-path={}", config.to_string_lossy()));
+    }
     if let Some(referer) = &stream.headers.referer {
         args.push(format!("--referer={referer}"));
     }
@@ -211,6 +220,16 @@ fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
     );
     args.push(stream.url.clone());
     args
+}
+
+fn aria2_config_path() -> Option<PathBuf> {
+    let profile = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+    aria2_config_path_from(profile)
+}
+
+fn aria2_config_path_from(profile: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let path = PathBuf::from(profile?).join(".aria2").join("aria2.conf");
+    path.is_file().then_some(path)
 }
 
 fn aria2_connection_count(stream: &StreamLink) -> u8 {
@@ -498,6 +517,20 @@ mod tests {
         assert_eq!(
             args.last().map(String::as_str),
             Some("https://media.example/video")
+        );
+    }
+
+    #[test]
+    fn discovers_aria2_config_below_the_user_profile() {
+        let profile = tempfile::tempdir().unwrap();
+        let config_directory = profile.path().join(".aria2");
+        std::fs::create_dir(&config_directory).unwrap();
+        let config = config_directory.join("aria2.conf");
+        std::fs::write(&config, "max-download-limit=1M\n").unwrap();
+
+        assert_eq!(
+            aria2_config_path_from(Some(profile.path().as_os_str().to_owned())),
+            Some(config)
         );
     }
 
