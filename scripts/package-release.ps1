@@ -3,6 +3,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-Sha256Hash {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "")
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $metadata = cargo metadata --no-deps --format-version 1 --manifest-path (Join-Path $projectRoot "Cargo.toml") | ConvertFrom-Json
 $version = $metadata.packages[0].version
@@ -37,7 +56,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot "README.md") -Destination (Join-P
 Copy-Item -LiteralPath $licensePath -Destination (Join-Path $packageDirectory "LICENSE") -Force
 
 Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath -Force
-$archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$archiveHash = (Get-Sha256Hash -Path $archivePath).ToLowerInvariant()
 $checksumPath = "$archivePath.sha256"
 Set-Content -LiteralPath $checksumPath -Value "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))" -Encoding ascii
 Write-Host "Created $archivePath and $checksumPath"

@@ -4,6 +4,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-Sha256Hash {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "")
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 if ($env:ANI_CLI_RS_WAIT_FOR_PID) {
     Wait-Process -Id ([int]$env:ANI_CLI_RS_WAIT_FOR_PID) -ErrorAction SilentlyContinue
 }
@@ -33,11 +52,12 @@ try {
     Invoke-WebRequest -Uri $checksumAsset.browser_download_url -Headers $headers -OutFile $checksumPath
 
     $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split "\s+")[0]
-    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+    $actualHash = Get-Sha256Hash -Path $archivePath
     if ($expectedHash -ne $actualHash) { throw "Checksum verification failed for $assetName." }
 
     $expandedDirectory = Join-Path $temporaryDirectory "expanded"
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $expandedDirectory
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $expandedDirectory)
     $binary = Get-ChildItem -LiteralPath $expandedDirectory -Filter "ani-cli-rs.exe" -File -Recurse | Select-Object -First 1
     if (-not $binary) { throw "The release archive did not contain ani-cli-rs.exe." }
 

@@ -89,8 +89,8 @@ Official Windows binaries are currently unsigned and may trigger Microsoft Smart
 Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
 
 ```powershell
-(Get-FileHash .\ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip.sha256
+certutil -hashfile .\ani-cli-rs-0.5.2-x86_64-pc-windows-msvc.zip SHA256
+Get-Content .\ani-cli-rs-0.5.2-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.
