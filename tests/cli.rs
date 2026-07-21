@@ -25,3 +25,13 @@ fn invalid_mode_fails_before_network_for_episodes() {
             "translation type must be sub or dub",
         ));
 }
+
+#[test]
+fn download_help_distinguishes_show_ids_from_titles() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .args(["download", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not an anime title"));
+}

@@ -89,8 +89,8 @@ Official Windows binaries are currently unsigned and may trigger Microsoft Smart
 Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
 
 ```powershell
-(Get-FileHash .\ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-Get-Content .\ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip.sha256
+(Get-FileHash .\ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+Get-Content .\ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.
@@ -132,6 +132,38 @@ After a single episode is launched from an interactive terminal, ani-cli-rs keep
 - Non-interactive options such as `--select-nth` and `--episode` retain their existing behavior.
 
 ## Scriptable commands
+
+### Show IDs and anime titles
+
+The scriptable `episodes`, `links`, `play`, and `download` subcommands require a **show ID**, not an anime name. For example, in this Mkissa URL:
+
+```text
+https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
+```
+
+the show ID is the segment after `/anime/`:
+
+```text
+SyR2K6bGYfKSE6YMm
+```
+
+You can also obtain IDs without opening Mkissa by running:
+
+```console
+ani-cli-rs search --json "anime title"
+```
+
+Use the returned `id` value with a scriptable command:
+
+```console
+ani-cli-rs download SyR2K6bGYfKSE6YMm 1 --title "Anime title" --output ./Downloads
+```
+
+`--title` only controls the player title or output filename; it does not search for an anime. To download by name, use the compatible interactive workflow instead:
+
+```console
+ani-cli-rs --download -e 1 "anime title"
+```
 
 ```console
 ani-cli-rs search --json "frieren"

@@ -192,7 +192,7 @@ fn aria2_args(stream: &StreamLink, partial: &Path) -> Vec<String> {
         "--allow-overwrite=true".into(),
         "--console-log-level=error".into(),
         "--download-result=hide".into(),
-        "--summary-interval=1".into(),
+        "--summary-interval=0".into(),
         format!("--dir={}", directory.to_string_lossy()),
         format!("--out={filename}"),
     ];
@@ -491,6 +491,7 @@ mod tests {
         assert!(args.contains(&"--split=16".into()));
         assert!(args.contains(&"--console-log-level=error".into()));
         assert!(args.contains(&"--download-result=hide".into()));
+        assert!(args.contains(&"--summary-interval=0".into()));
         assert!(args.contains(&"--referer=https://example.com/watch".into()));
         assert!(args.contains(&"--header=Origin: https://example.com".into()));
         assert!(args.contains(&"--header=X-Test: value".into()));

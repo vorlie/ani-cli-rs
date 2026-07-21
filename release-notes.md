@@ -1,57 +1,24 @@
-# ani-cli-rs 0.5.0
+# ani-cli-rs 0.5.1
 
-`0.5.0` adds a built-in release checker and installer handoff while improving aria2 reliability for Mp4Upload downloads. Users can now check for updates or start the existing checksum-verifying installer directly from ani-cli-rs.
+`0.5.1` is a small quality-of-life patch for downloads and command-line documentation. It keeps aria2's useful live status while removing its noisy expanded progress summaries, and makes the required AllAnime/Mkissa show ID much clearer in scriptable commands.
 
-There are no intentional breaking changes to existing playback, download, history, library, or JSON interfaces.
+There are no intentional breaking changes to playback, downloads, history, library APIs, or JSON output.
 
-## Highlights
+## Changes
 
-### Built-in update checker
+### Quieter aria2 progress
 
-- Added Bash-compatible `-U/--update` to check for and install the latest release.
-- Added `ani-cli-rs update` for the same scriptable workflow.
-- Added `ani-cli-rs update --check` to report availability without changing the installation.
-- Release versions are compared numerically, so versions such as `0.10.0` correctly sort after `0.9.0`.
-- Installer scripts are downloaded from the exact GitHub release tag rather than the mutable `master` branch.
-- Release tags are validated before being used to construct an installer URL.
-- The existing installers continue to download the platform archive and verify its published SHA-256 checksum.
+- Disabled aria2's expanded periodic progress-summary blocks.
+- Kept the compact live progress line with downloaded size, percentage, speed, connections, and ETA.
+- Kept the reduced four-connection limit for Mp4Upload downloads introduced in `0.5.0`.
 
-### Safe Windows replacement
+### Clearer show ID documentation
 
-- Windows updates are handed to PowerShell and continue after the running ani-cli-rs process exits, allowing the executable to be replaced safely.
-- Temporary updater scripts remove themselves after a successful Windows installation.
-- `ANI_CLI_RS_INSTALL_DIR` now overrides the installation directory on Windows as well as Unix.
-- The Windows installer retains its explicit `-InstallDirectory` option.
-- Updating does not require administrator privileges when using the default user-local installation directory.
-
-Official macOS release binaries remain unavailable. `update --check` works on macOS, but installation directs users to rebuild from source.
-
-### Mp4Upload download reliability
-
-- Mp4Upload direct downloads now use four aria2 connections instead of sixteen.
-- Other compatible direct providers retain the higher sixteen-connection limit.
-- The lower Mp4Upload limit avoids repeated `403 Forbidden` responses from excess range requests while retaining parallel download performance.
-- aria2 console logging is reduced and its final download-results table is hidden, while the live progress readout remains enabled.
-
-## Usage
-
-Check without installing:
-
-```console
-ani-cli-rs update --check
-```
-
-Install the latest release:
-
-```console
-ani-cli-rs update
-```
-
-The Bash-compatible form is also available:
-
-```console
-ani-cli-rs -U
-```
+- Clarified that the `episodes`, `links`, `play`, and `download` subcommands accept an AllAnime/Mkissa show ID, not an anime title.
+- Documented how to copy the ID from the final segment of a Mkissa anime URL. For example, the show ID in `https://mkissa.to/anime/SyR2K6bGYfKSE6YMm` is `SyR2K6bGYfKSE6YMm`.
+- Documented `ani-cli-rs search --json "anime title"` as a scriptable way to obtain a show ID.
+- Clarified that `--title` controls display text and the output filename; it does not replace the show ID.
+- Added a tested help-text regression check for the `download` command.
 
 ## Installation
 
@@ -75,20 +42,18 @@ The installers verify the downloaded release archive against its published SHA-2
 
 Upload each archive together with its generated `.sha256` file:
 
-- `ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip`
-- `ani-cli-rs-0.5.0-x86_64-pc-windows-msvc.zip.sha256`
-- `ani-cli-rs-0.5.0-x86_64-unknown-linux-musl.tar.gz`
-- `ani-cli-rs-0.5.0-x86_64-unknown-linux-musl.tar.gz.sha256`
+- `ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip`
+- `ani-cli-rs-0.5.1-x86_64-pc-windows-msvc.zip.sha256`
+- `ani-cli-rs-0.5.1-x86_64-unknown-linux-musl.tar.gz`
+- `ani-cli-rs-0.5.1-x86_64-unknown-linux-musl.tar.gz.sha256`
 
 Official macOS binaries are not published. macOS users may build from source with the included Cargo aliases.
 
 ## Verification
 
-- 35 deterministic Rust tests pass.
+- 36 deterministic Rust tests pass.
 - `cargo fmt --check` passes.
 - `cargo check --all-targets` passes.
 - `cargo clippy --all-targets -- -D warnings` passes.
-- The GitHub release check was smoke-tested against the live `vorlie/ani-cli-rs` repository.
-- PowerShell installer syntax and the delayed Windows replacement path were validated.
 
-**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.4.0...0.5.0
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.5.0...0.5.1

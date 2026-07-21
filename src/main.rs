@@ -121,7 +121,7 @@ struct SearchArgs {
 
 #[derive(Args, Debug)]
 struct EpisodesArgs {
-    /// AllAnime show identifier returned by search.
+    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
     show_id: String,
     /// Translation catalog to query: sub or dub.
     #[arg(long, default_value = "sub")]
@@ -133,7 +133,7 @@ struct EpisodesArgs {
 
 #[derive(Args, Debug)]
 struct LinksArgs {
-    /// AllAnime show identifier returned by search.
+    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
     show_id: String,
     /// Episode number or fractional episode string.
     episode: String,
@@ -150,7 +150,7 @@ struct LinksArgs {
 
 #[derive(Args, Debug)]
 struct ActionArgs {
-    /// AllAnime show identifier returned by search.
+    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
     show_id: String,
     /// Episode number or fractional episode string.
     episode: String,
