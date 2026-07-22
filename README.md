@@ -24,7 +24,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli), 
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
 - Scriptable commands with JSON output
-- Native Rust HTTP and cryptography—no curl, sed, OpenSSL, Botan, or fzf dependency
+- Native Rust HTTP and cryptography-no curl, sed, OpenSSL, Botan, or fzf dependency
 
 ## Installation
 
