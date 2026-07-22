@@ -1,72 +1,116 @@
-# ani-cli-rs 0.5.3
+# ani-cli-rs 0.7.0
 
-`0.5.3` makes the Windows installation layout consistent with Linux while preserving existing installations during in-app updates.
+This release adds Anikoto as an explicit second catalog while keeping AllAnime as the default for Bash ani-cli compatibility.
 
-There are no breaking changes to playback, downloads, history, library APIs, or JSON output.
+## Highlights
 
-## Windows installation path
+- Select Anikoto with `--provider anikoto`, `-p anikoto`, or `ANI_CLI_PROVIDER=anikoto`.
+- Search the Anikoto recent catalog and AniList concurrently, merge stable identifiers, and retain adult filtering.
+- Resolve native MegaPlay sources through explicit episode, embed-ID, AniList, and MAL candidates.
+- Play or download MegaPlay HLS delivered by KotoCDN, including confirmed PNG-wrapped MPEG-TS segments, through a tokenized loopback relay.
+- Preserve provider headers and subtitle metadata for mpv, VLC, Syncplay, yt-dlp, aria2, and FFmpeg workflows.
+- Store Anikoto history in the existing tab-separated format through self-identifying `anikoto:` IDs. Mixed AllAnime/Anikoto continuation routes each entry independently.
+- Return provider-aware catalog, mapping, rate-limit, extraction, and unavailable-source diagnostics.
 
-- Changed the default Windows installation directory from `%LOCALAPPDATA%\Programs\ani-cli-rs\bin` to `$HOME\.local\bin`.
-- Updated the Windows uninstaller to use the same default and respect `ANI_CLI_RS_INSTALL_DIR`.
-- Kept in-app updates pinned to the directory containing the running executable. Installations made with an older version are therefore upgraded in place instead of leaving a stale executable earlier in `PATH`.
-- Kept `ANI_CLI_RS_INSTALL_DIR` and the PowerShell `-InstallDirectory` parameter available for custom locations.
+AllAnime diagnostics remain available through `debug` and `refresh-cipher-map`; these commands intentionally reject an Anikoto selection. Searches are not combined, and playback never silently switches catalogs.
 
-## Optional Windows Setup wizard
+See [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) for the complete contributor workflow.
 
-- Added an Inno Setup package for users who prefer a conventional interactive Windows installer and uninstall entry.
-- Added `install.ps1 -UseSetup` to download, checksum-verify, and launch the setup wizard.
-- Kept the portable ZIP workflow as the default for scripts and automatic updates.
-- Windows release packaging now generates a SHA-256 checksum for the setup executable.
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.6.0...0.7.0
 
-Users on an earlier release can install this patch with:
+---
+
+# Previous release notes: ani-cli-rs 0.6.0
+
+This release significantly improves the interactive download workflow. You can now search by anime title, select the correct anime or season, choose episodes, and verify the complete batch before downloading begins.
+
+## What’s new
+
+### Interactive anime and season selection
+
+Run:
+
+```console
+ani-cli-rs --download "anime title"
+```
+
+Search results now clearly act as the anime/season picker, matching how AllAnime represents separate seasons.
+
+After selecting a result, choose one or multiple episodes to download.
+
+### Download preflight
+
+Before creating any files, ani-cli-rs now resolves every selected episode sequentially and:
+
+- Confirms that downloadable streams are available.
+- Applies the requested `-q/--quality` setting to each episode.
+- Filters out streams that cannot be downloaded.
+- Caches resolved streams for the subsequent transfers.
+- Preserves the selected episode order.
+
+Resolving episodes sequentially also helps avoid unnecessary AllAnime rate limiting.
+
+If an episode is unavailable:
+
+- Interactive sessions show every unavailable episode and return to the episode picker.
+- Back returns to the anime/season results.
+- Explicit `-e/--episode`, `--range`, continuation, and non-interactive requests fail without starting a partial batch.
+- No download files or history entries are created during a failed preflight.
+
+Network, rate-limit, crypto, and malformed-response errors remain fatal and are reported directly.
+
+### Scriptable downloads remain compatible
+
+The scriptable interface is unchanged:
+
+```console
+ani-cli-rs download SHOW_ID EPISODE
+```
+
+It still requires an AllAnime/Mkissa show ID rather than an anime name. Use the legacy-compatible interface when you want interactive title and season selection:
+
+```console
+ani-cli-rs --download "anime title"
+```
+
+## Documentation
+
+This release introduces a comprehensive project Wiki covering:
+
+- Installation and PATH configuration
+- CLI commands and environment variables
+- Playback, players, and keyboard controls
+- Downloads, aria2, yt-dlp, FFmpeg, and `.part` files
+- Configuration and history compatibility
+- Troubleshooting provider and network failures
+- Security, privacy, antivirus detections, and checksums
+- Building, packaging, and releasing
+- AllAnime scraper architecture
+- Contributor guidance and frequently asked questions
+
+See the [ani-cli-rs Wiki](https://github.com/vorlie/ani-cli-rs/wiki).
+
+The repository README has also been streamlined into a more concise project overview with direct links to the detailed Wiki pages.
+
+## Platform notes
+
+Official prebuilt releases are currently provided for:
+
+- Windows x64
+- Linux x86-64
+
+Linux ARM64 and macOS remain source-buildable, but no maintainer-built or device-tested binaries are published for them.
+
+The Linux installer now reports unsupported ARM64 systems clearly instead of attempting to download an unavailable release asset.
+
+## Upgrade
+
+Use the built-in updater:
 
 ```console
 ani-cli-rs update
 ```
 
-## Installation
+Or reinstall using the platform installation script. Release archives are accompanied by SHA-256 checksum files, which the installers verify automatically.
 
-### Linux
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh -o install.sh
-sh install.sh
-```
-
-### Windows PowerShell
-
-```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1 -OutFile install.ps1
-.\install.ps1
-```
-
-Fresh portable Windows installations are placed in `$HOME\.local\bin`. The script adds that directory to the user-level `PATH` when needed.
-
-Use the interactive Windows Setup wizard instead:
-
-```powershell
-.\install.ps1 -UseSetup
-```
-
-## Release asset checklist
-
-Upload each archive together with its generated `.sha256` file:
-
-- `ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip`
-- `ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip.sha256`
-- `ani-cli-rs-0.5.3-windows-x64-setup.exe`
-- `ani-cli-rs-0.5.3-windows-x64-setup.exe.sha256`
-- `ani-cli-rs-0.5.3-x86_64-unknown-linux-musl.tar.gz`
-- `ani-cli-rs-0.5.3-x86_64-unknown-linux-musl.tar.gz.sha256`
-
-Official macOS binaries are not published. macOS users may build from source with the included Cargo aliases.
-
-## Verification
-
-- 36 deterministic Rust tests pass.
-- Windows installer, uninstaller, and packaging scripts pass parser validation.
-- `cargo fmt --check` passes.
-- `cargo check --all-targets` passes.
-- `cargo clippy --all-targets -- -D warnings` passes.
-
-**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.5.2...0.5.3
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.5.4...0.6.0
