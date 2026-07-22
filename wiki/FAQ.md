@@ -46,6 +46,10 @@ The official musl binary is intended to be portable across common distributions 
 
 The project avoids consuming limited, higher-cost hosted macOS CI minutes. macOS remains source-buildable, but official assets are not promised.
 
+## Is there an official Linux ARM64 build?
+
+No. Linux ARM64 can be built from source, and a Cargo alias exists for contributor cross-builds, but the maintainer does not have ARM64 Linux hardware for device testing and does not publish an ARM64 release asset.
+
 ## Why does antivirus flag the Windows executable?
 
 It is currently unsigned and performs cryptography, dynamic frontend inspection, downloads, and child-process launching. Those behaviors can trigger heuristics. Verify checksums, inspect the source, or build locally. A detection should still be evaluated rather than automatically dismissed.

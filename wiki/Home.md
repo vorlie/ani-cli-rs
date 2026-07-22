@@ -22,7 +22,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 | Windows 10/11 x64 | Yes | Yes | Portable ZIP and optional per-user Inno Setup installer |
 | Windows on ARM64 | x64 build | Yes | Windows 11 can run the published x64 build through emulation |
 | Linux x86-64 | Yes | Yes | Official release uses musl for broad distribution compatibility |
-| Linux ARM64 | Yes | Yes | Official musl archive when published with the release |
+| Linux ARM64 | No | Yes | Source build only; not device-tested by the maintainer |
 | macOS Intel/Apple Silicon | No | Yes | Build locally; official macOS assets are intentionally not promised |
 | Android/Termux and iSH | No | Not supported | Outside the desktop-core target |
 

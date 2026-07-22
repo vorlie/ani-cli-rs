@@ -29,7 +29,7 @@ cargo release-linux
 cargo release-linux-arm64
 ```
 
-Local macOS builds are also available for users and contributors, although they are not published as official release assets:
+`release-linux-arm64` is a local cross-build helper only. Linux ARM64 assets are not officially published or device-tested by the maintainer. Local macOS builds are also available for users and contributors, although they are not published as official release assets:
 
 ```console
 cargo release-macos
@@ -52,7 +52,7 @@ The packaging scripts additionally create a standalone archive under `dist/` con
 
 The shell script selects a musl Linux target from the host architecture. An explicit Linux target can also be supplied, such as `./scripts/package-release.sh x86_64-unknown-linux-musl`. Install the selected target with `rustup target add <target>` first; musl builds also require the corresponding musl linker toolchain.
 
-Official prebuilt releases are provided for Windows and Linux only. macOS is not included because hosted macOS CI consumes a limited, higher-cost GitHub Actions minute allocation. The code remains portable, so macOS users may build it locally with `cargo build --release`, but no macOS release archive or installer support is promised.
+Official prebuilt releases are provided for Windows x64 and Linux x86-64 only. Linux ARM64 is source-buildable but has no maintainer-built or device-tested release asset. macOS is not included because hosted macOS CI consumes a limited, higher-cost GitHub Actions minute allocation. The code remains portable, so macOS users may build it locally with `cargo build --release`, but no macOS release archive or installer support is promised.
 
 Each package is accompanied by a `.sha256` file. Upload both files to the matching release in `vorlie/ani-cli-rs`; the installers refuse archives that do not match the published checksum.
 

@@ -8,7 +8,10 @@ host_arch=$(uname -m)
 
 case "$host_os:$host_arch" in
     Linux:x86_64) target=x86_64-unknown-linux-musl ;;
-    Linux:aarch64|Linux:arm64) target=aarch64-unknown-linux-musl ;;
+    Linux:aarch64|Linux:arm64)
+        echo "Official Linux ARM64 binaries are not provided. Install Rust and build ani-cli-rs from source." >&2
+        exit 2
+        ;;
     Darwin:*) echo "Official macOS binaries are not provided. Install Rust and build ani-cli-rs from source." >&2; exit 2 ;;
     *) echo "ani-cli-rs does not publish a build for $host_os/$host_arch." >&2; exit 2 ;;
 esac

@@ -36,6 +36,8 @@ cargo release-macos
 cargo release-macos-arm64
 ```
 
+The Linux ARM64 alias is provided for local/contributor builds only. The maintainer does not publish or device-test Linux ARM64 release assets.
+
 Examples:
 
 ```text
@@ -84,7 +86,7 @@ ani-cli-rs-VERSION-windows-x64-setup.exe.sha256
 
 1. Confirm the version in `Cargo.toml` and the root package entry in `Cargo.lock`.
 2. Run every required check from a clean tree.
-3. Build/package Windows x64, Linux x86-64 musl, and Linux ARM64 musl as applicable.
+3. Build/package Windows x64 and Linux x86-64 musl. Do not list Linux ARM64 as an official asset without a separately tested release policy.
 4. Test `--version`, `--help`, search, one playback resolution, one direct download, and one HLS path.
 5. Verify each archive locally.
 6. Create the matching Git tag/release.

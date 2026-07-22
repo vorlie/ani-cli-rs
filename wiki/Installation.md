@@ -1,6 +1,6 @@
 # Installation
 
-Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Windows and Linux are supported with prebuilt assets. macOS users build from source.
+Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users build from source.
 
 ## Windows: portable installation
 
@@ -52,7 +52,7 @@ sh install.sh
 rm install.sh
 ```
 
-The script supports Linux x86-64 and ARM64 release archives, verifies the published SHA-256 checksum, installs to `$HOME/.local/bin` by default, and adds that directory to `$HOME/.profile` when needed.
+The script installs the official Linux x86-64 archive, verifies its published SHA-256 checksum, installs to `$HOME/.local/bin` by default, and adds that directory to `$HOME/.profile` when needed. On Linux ARM64 it exits with source-build instructions because no official ARM64 asset is published.
 
 Custom locations:
 
@@ -61,6 +61,18 @@ ANI_CLI_RS_INSTALL_DIR="$HOME/bin" ANI_CLI_RS_PROFILE="$HOME/.bashrc" sh install
 ```
 
 Official Linux archives use musl so one release can work across common distributions such as Ubuntu, Debian, Arch, Fedora, and Alpine. Kernel and CPU architecture compatibility still apply.
+
+### Linux ARM64
+
+Linux ARM64 is source-buildable but is not device-tested by the maintainer and has no official release archive:
+
+```sh
+git clone https://github.com/vorlie/ani-cli-rs.git
+cd ani-cli-rs
+cargo build --release --locked
+```
+
+The local `cargo release-linux-arm64` alias is intended for contributors with a suitable cross-linker or ARM64 build environment; its existence does not indicate an official binary.
 
 ## macOS
 
