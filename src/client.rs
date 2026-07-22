@@ -240,7 +240,12 @@ impl AllAnimeClient {
                     .pointer(&format!("/availableEpisodes/{mode}"))
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0);
-                Some(SearchResult { id, name, episodes })
+                Some(SearchResult {
+                    id,
+                    name,
+                    episodes,
+                    provider: crate::CatalogProvider::AllAnime,
+                })
             })
             .collect())
     }
@@ -684,6 +689,7 @@ impl AllAnimeClient {
                 origin,
                 extra: Default::default(),
             },
+            subtitles: vec![],
         }
     }
 
