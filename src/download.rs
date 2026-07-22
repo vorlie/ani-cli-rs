@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 use reqwest::header;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, process::Command};
 
-use crate::{AniError, Result, StreamLink};
+use crate::{AniError, Result, StreamLink, relay_stream, requires_hls_relay};
 
 #[derive(Clone, Debug)]
 pub struct DownloadOptions {
@@ -17,6 +17,14 @@ pub struct DownloadOptions {
 }
 
 pub async fn download_stream(stream: &StreamLink, options: &DownloadOptions) -> Result<PathBuf> {
+    if requires_hls_relay(stream) {
+        let (_relay, local) = relay_stream(stream).await?;
+        return download_stream_inner(&local, options).await;
+    }
+    download_stream_inner(stream, options).await
+}
+
+async fn download_stream_inner(stream: &StreamLink, options: &DownloadOptions) -> Result<PathBuf> {
     tokio::fs::create_dir_all(&options.directory).await?;
     let filename = sanitize_filename(&options.filename);
     let target = options.directory.join(format!("{filename}.mp4"));
@@ -480,6 +488,7 @@ mod tests {
                 origin: Some("https://example.com".into()),
                 extra: [("X-Test".into(), "value".into())].into(),
             },
+            subtitles: vec![],
         }
     }
 
