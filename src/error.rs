@@ -20,6 +20,13 @@ pub enum AniError {
     Decryption(String),
     #[error("malformed provider data: {0}")]
     Provider(String),
+    #[error("{provider} catalog error: {message}")]
+    Catalog { provider: String, message: String },
+    #[error("{provider} rate limit reached; try again in {retry_after_seconds} seconds")]
+    ProviderRateLimited {
+        provider: String,
+        retry_after_seconds: u64,
+    },
     #[error("episode is unavailable: {0}")]
     Unavailable(String),
     #[error("player failed: {0}")]

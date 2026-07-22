@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Stdio};
 
 use tokio::process::Command;
 
-use crate::{AniError, Result, StreamLink};
+use crate::{AniError, Result, StreamLink, relay_stream, requires_hls_relay};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayerKind {
@@ -55,6 +55,13 @@ impl Player {
                 if !referer.is_empty() {
                     args.push(format!("--referrer={referer}"));
                 }
+                append_mpv_headers(&mut args, stream);
+                for track in &stream.subtitles {
+                    args.push(format!("--sub-file={}", track.url));
+                }
+                if let Some(track) = stream.subtitles.iter().find(|track| track.default) {
+                    args.push(format!("--slang={}", track.label));
+                }
                 args.push(stream.url.clone());
                 args
             }
@@ -62,6 +69,12 @@ impl Player {
                 let mut args = vec!["--play-and-exit".into(), format!("--meta-title={title}")];
                 if !referer.is_empty() {
                     args.push(format!("--http-referrer={referer}"));
+                }
+                if let Some(agent) = stream.headers.extra.get("User-Agent") {
+                    args.push(format!("--http-user-agent={agent}"));
+                }
+                for track in &stream.subtitles {
+                    args.push(format!("--sub-file={}", track.url));
                 }
                 args.push(stream.url.clone());
                 args
@@ -76,6 +89,10 @@ impl Player {
                 if !referer.is_empty() {
                     args.push(format!("--referrer={referer}"));
                 }
+                append_mpv_headers(&mut args, stream);
+                for track in &stream.subtitles {
+                    args.push(format!("--sub-file={}", track.url));
+                }
                 args
             }
             PlayerKind::Custom => vec![stream.url.clone()],
@@ -83,9 +100,22 @@ impl Player {
     }
 
     pub async fn play(&self, stream: &StreamLink, title: &str) -> Result<Option<i32>> {
+        if requires_hls_relay(stream) {
+            let (_relay, local) = relay_stream(stream).await?;
+            return self.play_inner(&local, title, true).await;
+        }
+        self.play_inner(stream, title, false).await
+    }
+
+    async fn play_inner(
+        &self,
+        stream: &StreamLink,
+        title: &str,
+        force_attached: bool,
+    ) -> Result<Option<i32>> {
         let mut command = Command::new(&self.options.executable);
         command.args(self.command_args(stream, title));
-        if self.options.no_detach {
+        if self.options.no_detach || force_attached {
             let status = command.status().await.map_err(|e| {
                 AniError::Player(format!(
                     "could not launch {}: {e}",
@@ -111,6 +141,30 @@ impl Player {
             Ok(None)
         }
     }
+}
+
+fn append_mpv_headers(args: &mut Vec<String>, stream: &StreamLink) {
+    let mut headers = Vec::new();
+    if let Some(origin) = &stream.headers.origin
+        && safe_header_value(origin)
+    {
+        headers.push(format!("Origin: {origin}"));
+    }
+    headers.extend(
+        stream
+            .headers
+            .extra
+            .iter()
+            .filter(|(name, value)| safe_header_value(name) && safe_header_value(value))
+            .map(|(name, value)| format!("{name}: {value}")),
+    );
+    if !headers.is_empty() {
+        args.push(format!("--http-header-fields={}", headers.join(",")));
+    }
+}
+
+fn safe_header_value(value: &str) -> bool {
+    !value.contains(['\r', '\n'])
 }
 
 fn env_bool(name: &str) -> bool {
@@ -141,6 +195,7 @@ mod tests {
                 referer: Some("https://ref.example".into()),
                 ..Default::default()
             },
+            subtitles: vec![],
         };
         assert!(
             player

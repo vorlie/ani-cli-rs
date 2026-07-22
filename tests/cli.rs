@@ -35,3 +35,55 @@ fn download_help_distinguishes_show_ids_from_titles() {
         .success()
         .stdout(predicate::str::contains("not an anime title"));
 }
+
+#[test]
+fn help_documents_provider_selection() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--provider"))
+        .stdout(predicate::str::contains("ANI_CLI_PROVIDER"));
+}
+
+#[test]
+fn allanime_only_diagnostics_reject_anikoto() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .args(["--provider", "anikoto", "debug"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("AllAnime-only"));
+}
+
+#[test]
+fn numeric_anikoto_ids_require_explicit_provider() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .args(["--provider", "anikoto", "episodes", "not-a-valid-id"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid Anikoto show ID"));
+}
+
+#[test]
+fn environment_can_select_anikoto() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .env("ANI_CLI_PROVIDER", "anikoto")
+        .arg("debug")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("AllAnime-only"));
+}
+
+#[test]
+fn prefixed_ids_auto_route_to_anikoto() {
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .args(["episodes", "anikoto:not-base64"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid Anikoto show ID"));
+}

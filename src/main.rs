@@ -1,9 +1,10 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
-    AllAnimeClient, AniError, DownloadOptions, HistoryEntry, HistoryStore, Player, PlayerKind,
-    PlayerOptions, Result, SearchOptions, SearchResult, StreamLink, TranslationType,
-    choose_quality, download_stream, expand_episode_selection,
+    AllAnimeClient, AniError, AnikotoClient, CatalogProvider, DownloadOptions, HistoryEntry,
+    HistoryStore, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
+    StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
+    provider_from_show_id,
 };
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
@@ -11,21 +12,24 @@ use serde::{Deserialize, Serialize};
 
 mod updater;
 
-const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime.\n\nThe interactive workflow searches the subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
+const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime or Anikoto/MegaPlay.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. AllAnime remains the default; select Anikoto with --provider anikoto or ANI_CLI_PROVIDER=anikoto. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
 
 #[derive(Parser, Debug)]
 #[command(
     name = "ani-cli-rs",
     version,
-    about = "Browse, play, and download anime from AllAnime",
+    about = "Browse, play, and download anime from AllAnime or Anikoto",
     long_about = LONG_ABOUT,
     after_help = AFTER_HELP
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+    /// Catalog provider. Prefixed Anikoto IDs route automatically.
+    #[arg(short = 'p', long, global = true, env = "ANI_CLI_PROVIDER")]
+    provider: Option<CatalogProvider>,
     /// Continue from the next unwatched episode in the ani-cli history.
     #[arg(short = 'c', long = "continue")]
     continue_watching: bool,
@@ -56,7 +60,7 @@ struct Cli {
     /// Search and play the dubbed catalog instead of subtitles.
     #[arg(long)]
     dub: bool,
-    /// Include titles marked as adult in AllAnime search results.
+    /// Include titles marked as adult in catalog search results.
     #[arg(short = 'a', long, env = "ANI_CLI_ALLOW_ADULT")]
     allow_adult: bool,
     /// Keep the player attached and wait for it to exit.
@@ -78,9 +82,9 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Search the AllAnime catalog without opening the interactive player.
+    /// Search the selected catalog without opening the interactive player.
     Search(SearchArgs),
-    /// List the available episodes for an AllAnime show ID.
+    /// List the available episodes for a provider show ID.
     Episodes(EpisodesArgs),
     /// Resolve and display playable sources for one episode.
     Links(LinksArgs),
@@ -121,7 +125,7 @@ struct SearchArgs {
 
 #[derive(Args, Debug)]
 struct EpisodesArgs {
-    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
+    /// Provider show ID returned by search; this is not an anime title.
     show_id: String,
     /// Translation catalog to query: sub or dub.
     #[arg(long, default_value = "sub")]
@@ -133,7 +137,7 @@ struct EpisodesArgs {
 
 #[derive(Args, Debug)]
 struct LinksArgs {
-    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
+    /// Provider show ID returned by search; this is not an anime title.
     show_id: String,
     /// Episode number or fractional episode string.
     episode: String,
@@ -150,7 +154,7 @@ struct LinksArgs {
 
 #[derive(Args, Debug)]
 struct ActionArgs {
-    /// AllAnime/Mkissa show ID returned by search; this is not an anime title.
+    /// Provider show ID returned by search; this is not an anime title.
     show_id: String,
     /// Episode number or fractional episode string.
     episode: String,
@@ -211,9 +215,9 @@ async fn run(cli: Cli) -> Result<()> {
         return display_next_episode_schedule(&query).await;
     }
 
-    let client = AllAnimeClient::new()?;
+    let clients = ProviderClients::new()?;
     if let Some(command) = cli.command {
-        return run_command(&client, command).await;
+        return run_command(&clients, cli.provider, command).await;
     }
     let history = HistoryStore::platform_default()?;
     if cli.delete {
@@ -234,7 +238,7 @@ async fn run(cli: Cli) -> Result<()> {
     let terminal = std::io::stdin().is_terminal();
     let (show, episodes, selected, prepared_downloads) = if cli.continue_watching {
         let Some((show, episodes, initial_episode)) =
-            continue_selection(&client, &history, mode, cli.select_nth).await?
+            continue_selection(&clients, &history, mode, cli.select_nth).await?
         else {
             return Ok(());
         };
@@ -246,7 +250,7 @@ async fn run(cli: Cli) -> Result<()> {
         let selected = expand_episode_selection(&selection, &episodes)?;
         let prepared = if cli.download {
             Some(require_download_preflight(
-                preflight_downloads(&client, &show, &selected, mode, &cli.quality).await?,
+                preflight_downloads(&clients, &show, &selected, mode, &cli.quality).await?,
             )?)
         } else {
             None
@@ -267,8 +271,9 @@ async fn run(cli: Cli) -> Result<()> {
                     .interact_text()
                     .map_err(dialog_error)?
             };
-            let results = client
+            let results = clients
                 .search_with_options(
+                    cli.provider.unwrap_or_default(),
                     &query,
                     mode,
                     SearchOptions {
@@ -285,7 +290,7 @@ async fn run(cli: Cli) -> Result<()> {
                 let Some(show) = select_search_result(&results, cli.select_nth, purpose)? else {
                     continue 'search;
                 };
-                let episodes = client.episodes(&show.id, mode).await?;
+                let episodes = clients.episodes(&show.id, show.provider, mode).await?;
                 'episode: loop {
                     let selection = if let Some(selection) = cli.episode.clone() {
                         selection
@@ -302,7 +307,7 @@ async fn run(cli: Cli) -> Result<()> {
                     };
                     let selected = expand_episode_selection(&selection, &episodes)?;
                     let prepared = if cli.download {
-                        match preflight_downloads(&client, &show, &selected, mode, &cli.quality)
+                        match preflight_downloads(&clients, &show, &selected, mode, &cli.quality)
                             .await?
                         {
                             DownloadPreflight::Ready(prepared) => Some(prepared),
@@ -333,7 +338,7 @@ async fn run(cli: Cli) -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     let context = PlaybackContext {
-        client: &client,
+        clients: &clients,
         history: &history,
         show: &show,
         episodes: &episodes,
@@ -439,11 +444,83 @@ fn valid_release_time(time: &str) -> bool {
     !(time.starts_with("0001-") || time.starts_with("0002-"))
 }
 
-async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
+struct ProviderClients {
+    allanime: AllAnimeClient,
+    anikoto: AnikotoClient,
+}
+
+impl ProviderClients {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            allanime: AllAnimeClient::new()?,
+            anikoto: AnikotoClient::new()?,
+        })
+    }
+
+    async fn search_with_options(
+        &self,
+        provider: CatalogProvider,
+        query: &str,
+        mode: TranslationType,
+        options: SearchOptions,
+    ) -> Result<Vec<SearchResult>> {
+        match provider {
+            CatalogProvider::AllAnime => {
+                self.allanime
+                    .search_with_options(query, mode, options)
+                    .await
+            }
+            CatalogProvider::Anikoto => {
+                self.anikoto.search_with_options(query, mode, options).await
+            }
+        }
+    }
+
+    async fn episodes(
+        &self,
+        show_id: &str,
+        selected: CatalogProvider,
+        mode: TranslationType,
+    ) -> Result<Vec<String>> {
+        match if show_id.starts_with("anikoto:") {
+            CatalogProvider::Anikoto
+        } else {
+            selected
+        } {
+            CatalogProvider::AllAnime => self.allanime.episodes(show_id, mode).await,
+            CatalogProvider::Anikoto => self.anikoto.episodes(show_id, mode).await,
+        }
+    }
+
+    async fn streams(
+        &self,
+        show_id: &str,
+        selected: CatalogProvider,
+        episode: &str,
+        mode: TranslationType,
+    ) -> Result<Vec<StreamLink>> {
+        match if show_id.starts_with("anikoto:") {
+            CatalogProvider::Anikoto
+        } else {
+            selected
+        } {
+            CatalogProvider::AllAnime => self.allanime.streams(show_id, episode, mode).await,
+            CatalogProvider::Anikoto => self.anikoto.streams(show_id, episode, mode).await,
+        }
+    }
+}
+
+async fn run_command(
+    clients: &ProviderClients,
+    selected_provider: Option<CatalogProvider>,
+    command: Commands,
+) -> Result<()> {
+    let provider = selected_provider.unwrap_or_default();
     match command {
         Commands::Search(args) => {
-            let values = client
+            let values = clients
                 .search_with_options(
+                    provider,
                     &args.query,
                     TranslationType::from_str(&args.mode)?,
                     SearchOptions {
@@ -456,15 +533,20 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
             })?;
         }
         Commands::Episodes(args) => {
-            let values = client
-                .episodes(&args.show_id, TranslationType::from_str(&args.mode)?)
+            let values = clients
+                .episodes(
+                    &args.show_id,
+                    provider,
+                    TranslationType::from_str(&args.mode)?,
+                )
                 .await?;
             output(&values, args.json, |value| value.clone())?;
         }
         Commands::Links(args) => {
-            let values = client
+            let values = clients
                 .streams(
                     &args.show_id,
+                    provider,
                     &args.episode,
                     TranslationType::from_str(&args.mode)?,
                 )
@@ -483,7 +565,9 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
         }
         Commands::Play(args) => {
             let mode = TranslationType::from_str(&args.mode)?;
-            let streams = client.streams(&args.show_id, &args.episode, mode).await?;
+            let streams = clients
+                .streams(&args.show_id, provider, &args.episode, mode)
+                .await?;
             let stream = choose_quality(&streams, &args.quality)
                 .ok_or_else(|| AniError::Unavailable("no streams".into()))?;
             let options = PlayerOptions {
@@ -499,9 +583,10 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
                 .await?;
         }
         Commands::Download(args) => {
-            let streams = client
+            let streams = clients
                 .streams(
                     &args.show_id,
+                    provider,
                     &args.episode,
                     TranslationType::from_str(&args.mode)?,
                 )
@@ -517,15 +602,30 @@ async fn run_command(client: &AllAnimeClient, command: Commands) -> Result<()> {
                 download_stream(stream, &options).await?.display()
             );
         }
-        Commands::Debug { refresh } => println!(
-            "{}",
-            serde_json::to_string_pretty(&client.crypto_debug(refresh).await?)?
-        ),
-        Commands::RefreshCipherMap => println!(
-            "{}",
-            serde_json::to_string_pretty(&client.refresh_cipher_map().await?)?
-        ),
+        Commands::Debug { refresh } => {
+            require_allanime_diagnostic(provider)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&clients.allanime.crypto_debug(refresh).await?)?
+            );
+        }
+        Commands::RefreshCipherMap => {
+            require_allanime_diagnostic(provider)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&clients.allanime.refresh_cipher_map().await?)?
+            );
+        }
         Commands::Update { .. } => unreachable!("update commands are handled before client setup"),
+    }
+    Ok(())
+}
+
+fn require_allanime_diagnostic(provider: CatalogProvider) -> Result<()> {
+    if provider == CatalogProvider::Anikoto {
+        return Err(AniError::Input(
+            "debug and refresh-cipher-map are AllAnime-only commands".into(),
+        ));
     }
     Ok(())
 }
@@ -691,14 +791,15 @@ fn multiple_episode_selection(episodes: &[String], selected: &[usize]) -> Option
 }
 
 async fn continue_selection(
-    client: &AllAnimeClient,
+    clients: &ProviderClients,
     history: &HistoryStore,
     mode: TranslationType,
     nth: Option<usize>,
 ) -> Result<Option<(SearchResult, Vec<String>, Option<String>)>> {
     let mut candidates = Vec::new();
     for entry in history.entries().await? {
-        let episodes = client.episodes(&entry.show_id, mode).await?;
+        let provider = provider_from_show_id(&entry.show_id);
+        let episodes = clients.episodes(&entry.show_id, provider, mode).await?;
         if let Some(position) = episodes.iter().position(|value| value == &entry.episode)
             && let Some(next) = episodes.get(position + 1)
         {
@@ -708,6 +809,7 @@ async fn continue_selection(
                     id: entry.show_id,
                     name: entry.title,
                     episodes: episodes.len() as f64,
+                    provider,
                 },
                 episodes,
                 next,
@@ -769,7 +871,7 @@ fn build_legacy_player(cli: &Cli) -> Player {
 }
 
 struct PlaybackContext<'a> {
-    client: &'a AllAnimeClient,
+    clients: &'a ProviderClients,
     history: &'a HistoryStore,
     show: &'a SearchResult,
     episodes: &'a [String],
@@ -797,7 +899,7 @@ enum DownloadPreflight {
 }
 
 async fn preflight_downloads(
-    client: &AllAnimeClient,
+    clients: &ProviderClients,
     show: &SearchResult,
     episodes: &[String],
     mode: TranslationType,
@@ -807,7 +909,9 @@ async fn preflight_downloads(
     for episode in episodes {
         println!("Checking {} episode {episode} sources...", show.name);
         let result = async {
-            let streams = client.streams(&show.id, episode, mode).await?;
+            let streams = clients
+                .streams(&show.id, show.provider, episode, mode)
+                .await?;
             let stream = choose_download_stream(&streams, quality)
                 .ok_or_else(|| AniError::Unavailable("no downloadable streams".into()))?;
             Ok(PreparedEpisode {
@@ -888,8 +992,13 @@ async fn prepare_episode(
 ) -> Result<PreparedEpisode> {
     println!("Fetching {} episode {episode}...", context.show.name);
     let streams = context
-        .client
-        .streams(&context.show.id, episode, context.mode)
+        .clients
+        .streams(
+            &context.show.id,
+            context.show.provider,
+            episode,
+            context.mode,
+        )
         .await?;
     let stream = choose_quality(&streams, quality)
         .cloned()
@@ -983,8 +1092,13 @@ async fn interactive_after_play(
             }
             PlaybackAction::ChangeQuality => {
                 let streams = context
-                    .client
-                    .streams(&context.show.id, &episode, context.mode)
+                    .clients
+                    .streams(
+                        &context.show.id,
+                        context.show.provider,
+                        &episode,
+                        context.mode,
+                    )
                     .await?;
                 let choices: Vec<_> = streams
                     .iter()
@@ -1223,6 +1337,7 @@ mod tests {
             provider: "Test".into(),
             downloadable,
             headers: ani_cli::RequestHeaders::default(),
+            subtitles: vec![],
         }
     }
 

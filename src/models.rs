@@ -6,6 +6,37 @@ use crate::{AniError, Result};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+pub enum CatalogProvider {
+    #[default]
+    AllAnime,
+    Anikoto,
+}
+
+impl fmt::Display for CatalogProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::AllAnime => "allanime",
+            Self::Anikoto => "anikoto",
+        })
+    }
+}
+
+impl FromStr for CatalogProvider {
+    type Err = AniError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "allanime" | "all-anime" => Ok(Self::AllAnime),
+            "anikoto" => Ok(Self::Anikoto),
+            _ => Err(AniError::Input(format!(
+                "provider must be allanime or anikoto, got {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum TranslationType {
     #[default]
     Sub,
@@ -36,7 +67,7 @@ impl FromStr for TranslationType {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SearchOptions {
-    /// Include titles marked as adult by AllAnime.
+    /// Include titles marked as adult by the selected catalog.
     pub allow_adult: bool,
 }
 
@@ -45,6 +76,16 @@ pub struct SearchResult {
     pub id: String,
     pub name: String,
     pub episodes: f64,
+    #[serde(default)]
+    pub provider: CatalogProvider,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SubtitleTrack {
+    pub label: String,
+    pub url: String,
+    #[serde(default)]
+    pub default: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -64,6 +105,8 @@ pub struct StreamLink {
     pub downloadable: bool,
     #[serde(default)]
     pub headers: RequestHeaders,
+    #[serde(default)]
+    pub subtitles: Vec<SubtitleTrack>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -202,6 +245,7 @@ mod tests {
             provider: "Default".into(),
             downloadable: true,
             headers: RequestHeaders::default(),
+            subtitles: vec![],
         }
     }
 
