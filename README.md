@@ -1,64 +1,36 @@
 # ani-cli-rs
 
-A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) focused on the current AllAnime workflow. It provides both the distinctly named `ani-cli-rs` executable and an `ani_cli` library, allowing it to coexist with the Bash `ani-cli`. Derived work is licensed under GPL-3.0-only; see the repository-level `LICENSE`.
+A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli), focused on the current AllAnime workflow.
+
+`ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
 ## Quick links
 
-- [Build](#build) · [Release packaging](#target-specific-and-standalone-releases) · [Install](#install-from-github-releases)
-- [Antivirus and verification](#antivirus-and-release-verification) · [Compatible workflow](#compatible-workflow) · [Keyboard navigation](#keyboard-navigation)
-- [Scriptable commands](#scriptable-commands) · [Library API](#library) · [Diagnostics and tests](#diagnostics-and-tests)
-- [Deliberately excluded features](#deliberately-excluded-from-v1)
-- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Plugin roadmap](PLUGIN-ROADMAP.md)
-- [Comprehensive wiki source](wiki/Home.md)
+- [Install](#installation)
+- [Quick start](#quick-start)
+- [Requirements](#requirements)
+- [CLI compatibility](#cli-compatibility)
+- [Scriptable commands](#scriptable-commands)
+- [Build and test](#build-and-test)
+- [Troubleshooting](https://github.com/vorlie/ani-cli-rs/wiki/Troubleshooting)
+- [Complete documentation](https://github.com/vorlie/ani-cli-rs/wiki)
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
 
-## Build
+## Features
 
-```console
-cargo build --release
-```
+- Interactive anime/season and episode selection
+- Subbed and dubbed AllAnime search and playback
+- mpv, VLC, and Syncplay support
+- Quality selection, episode ranges, history, and continuation
+- Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
+- Scriptable commands with JSON output
+- Native Rust HTTP and cryptography—no curl, sed, OpenSSL, Botan, or fzf dependency
 
-The binary is written to `target/release/ani-cli-rs` (`ani-cli-rs.exe` on Windows). The scraper uses native Rust HTTP and cryptography and does not require curl, sed, OpenSSL, Botan, or fzf.
+## Installation
 
-### Target-specific and standalone releases
+Official releases are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users can build from source, but maintainer-built binaries are not currently published for those platforms.
 
-Explicit Cargo targets are kept separate automatically:
-
-```console
-cargo release-windows
-cargo release-linux
-cargo release-linux-arm64
-```
-
-`release-linux-arm64` is a local cross-build helper only. Linux ARM64 assets are not officially published or device-tested by the maintainer. Local macOS builds are also available for users and contributors, although they are not published as official release assets:
-
-```console
-cargo release-macos
-cargo release-macos-arm64
-```
-
-For example, the portable Linux build is placed in `target/x86_64-unknown-linux-musl/release/ani-cli-rs`, while Windows uses `target/x86_64-pc-windows-msvc/release/ani-cli-rs.exe`.
-
-The Windows release command and packaging script remap the builder's user-profile path to `/build`, preventing local usernames from being embedded in Rust panic and source-location strings.
-
-The packaging scripts additionally create a standalone archive under `dist/` containing only the executable, README, and license:
-
-```powershell
-.\scripts\package-release.ps1
-```
-
-```sh
-./scripts/package-release.sh
-```
-
-The shell script selects a musl Linux target from the host architecture. An explicit Linux target can also be supplied, such as `./scripts/package-release.sh x86_64-unknown-linux-musl`. Install the selected target with `rustup target add <target>` first; musl builds also require the corresponding musl linker toolchain.
-
-Official prebuilt releases are provided for Windows x64 and Linux x86-64 only. Linux ARM64 is source-buildable but has no maintainer-built or device-tested release asset. macOS is not included because hosted macOS CI consumes a limited, higher-cost GitHub Actions minute allocation. The code remains portable, so macOS users may build it locally with `cargo build --release`, but no macOS release archive or installer support is promised.
-
-Each package is accompanied by a `.sha256` file. Upload both files to the matching release in `vorlie/ani-cli-rs`; the installers refuse archives that do not match the published checksum.
-
-### Install from GitHub Releases
-
-Linux:
+### Linux
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh -o install.sh
@@ -66,7 +38,9 @@ sh install.sh
 rm install.sh
 ```
 
-Windows PowerShell:
+### Windows PowerShell
+
+Portable installation:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1 -OutFile install.ps1
@@ -74,124 +48,79 @@ Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scr
 Remove-Item .\install.ps1
 ```
 
-To use the interactive Inno Setup wizard instead of the portable ZIP installation:
+To use the Inno Setup installer instead:
 
 ```powershell
 .\install.ps1 -UseSetup
 ```
 
-Both modes verify the selected release asset against its published SHA-256 checksum. The setup mode requires the release to include the matching `windows-x64-setup.exe` and `.sha256` assets.
+The scripts verify release archives against their published SHA-256 checksums and install to the user-local `~/.local/bin` directory by default. See the [installation guide](https://github.com/vorlie/ani-cli-rs/wiki/Installation) for PATH help, custom locations, uninstalling, and source builds.
 
-The Unix and portable Windows script installations use the user-local `~/.local/bin` directory by default (`$HOME\.local\bin` in PowerShell). Inno Setup uses the per-user Programs directory and manages its own uninstall entry. The built-in Windows updater replaces the executable in its existing installation directory, so existing portable installations do not move unexpectedly. Override the script installation directory with `ANI_CLI_RS_INSTALL_DIR`; the Windows script also accepts `-InstallDirectory`.
+## Requirements
 
-Uninstall with the corresponding `scripts/uninstall.sh` or `scripts/uninstall.ps1` script.
+- [mpv](https://mpv.io/) for default playback, or VLC/Syncplay when selected
+- Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
+- Optional: yt-dlp and FFmpeg for HLS downloads and fallbacks
 
-### Antivirus and release verification
+External programs must be available through `PATH`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 
-Official Windows binaries are currently unsigned and may trigger Microsoft SmartScreen or heuristic antivirus detections. VirusTotal's behavior report for older releases has also described parts of the executable as obfuscated. A detection should be investigated rather than dismissed automatically, but that label can be caused by behavior that is expected and visible in this repository:
+## Quick start
 
-- The AllAnime client performs AES-GCM, AES-CTR, XOR, SHA-256, and Base64 operations to construct and decode provider requests.
-- It downloads and scans AllAnime/Mkissa JavaScript bootstrap data because the provider changes its runtime crypto material.
-- It resolves media URLs and starts external programs such as mpv, VLC, Syncplay, yt-dlp, or FFmpeg.
-- The optional installer adds a user-local binary directory to the user's `PATH`; the application itself does not require administrator privileges.
-
-Release archives include a separate `.sha256` file. The provided installers verify this checksum automatically. To verify a downloaded Windows archive manually:
-
-```powershell
-certutil -hashfile .\ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip SHA256
-Get-Content .\ani-cli-rs-0.5.3-x86_64-pc-windows-msvc.zip.sha256
-```
-
-The two hashes must match. A matching checksum confirms that the archive is identical to the file published with the GitHub release; it does not replace reviewing the source or trusting the release publisher. Users who prefer not to run a prebuilt executable can inspect the tagged source and build it locally with `cargo build --release --locked`.
-
-Playback requires `mpv` by default. `--vlc` uses VLC and `--syncplay` uses Syncplay.
-
-For faster downloads, install `aria2c` through your operating system's package manager and ensure it is available in `PATH`. Direct media then uses up to 16 parallel connections with resume support; providers known to enforce lower connection limits, such as Mp4Upload, use a safer limit automatically. HLS downloads use yt-dlp with aria2c as its external downloader while retaining yt-dlp's 16 concurrent fragment setting. If aria2c fails or is unavailable, direct media falls back to the built-in resumable `.part` downloader; HLS retries with yt-dlp alone and then FFmpeg. Each available downloader reports its own size, speed, percentage, and ETA information.
-
-When present, the user's aria2 configuration is loaded explicitly from `%USERPROFILE%\.aria2\aria2.conf` on Windows or `$HOME/.aria2/aria2.conf` on Unix. Command-line options required for safe resume, output naming, and provider headers still take precedence over conflicting configuration entries.
-
-## Compatible workflow
+Search interactively:
 
 ```console
-ani-cli-rs frieren
-ani-cli-rs --allow-adult "search query"
+ani-cli-rs "frieren"
+```
+
+Common examples:
+
+```console
 ani-cli-rs --dub -q 720p "cowboy bebop"
-ani-cli-rs -S 1 -e 2-4 "one piece"
+ani-cli-rs -e 2-4 "one piece"
 ani-cli-rs --continue
 ani-cli-rs --download "anime title"
-ani-cli-rs --delete
+ani-cli-rs --allow-adult "search query"
 ```
 
-Supported compatibility flags are `-c/--continue`, `-d/--download`, `-D/--delete`, `-s/--syncplay`, `-S/--select-nth`, `-q/--quality`, `-v/--vlc`, `-e/--episode`, `-r/--range`, `-a/--allow-adult`, `-N/--nextep-countdown`, `-U/--update`, `--dub`, `--multi-selection`, `--no-detach`, and `--exit-after-play`.
+Interactive playback remains open after an episode and offers next, replay, previous, episode-selection, and quality controls. Add `--exit-after-play` to exit immediately instead.
 
-Supported environment variables are `ANI_CLI_MODE`, `ANI_CLI_PLAYER`, `ANI_CLI_DOWNLOAD_DIR`, `ANI_CLI_QUALITY`, `ANI_CLI_HIST_DIR`, `ANI_CLI_ALLOW_ADULT`, `ANI_CLI_MULTI_SELECTION`, `ANI_CLI_NO_DETACH`, and `ANI_CLI_EXIT_AFTER_PLAY`.
+In download mode, search results act as the anime/season picker. All selected episodes are resolved before the first transfer begins, preventing unavailable episodes from leaving a partially downloaded batch.
 
-History remains compatible with ani-cli's tab-separated `ani-hsts` format. Set `ANI_CLI_HIST_DIR` to share an existing history directory.
+## CLI compatibility
 
-### Interactive downloads
+The primary interface follows Bash ani-cli conventions:
 
-Use the compatibility interface to download by anime name:
-
-```console
-ani-cli-rs --download "anime title"
+```text
+ani-cli-rs [OPTIONS] [QUERY]
 ```
 
-The search results act as the anime/season picker because AllAnime publishes seasons as separate show entries. After choosing the correct entry, select one or multiple episodes. ani-cli-rs resolves every selected episode and chooses the requested `-q/--quality` before starting the first transfer, so an unavailable episode cannot leave a partially completed batch. A prompted terminal session reports unavailable episodes and returns to the episode picker; Back returns to the anime/season results.
+Supported compatibility flags include:
 
-Supplying `-e/--episode` (or its `-r/--range` alias) keeps the workflow non-interactive. If preflight fails, the command exits before creating download files or updating history. Availability is based on resolving a downloadable provider stream; ani-cli-rs does not send a separate `HEAD` probe because some providers reject those requests.
+```text
+-c, --continue            Continue from history
+-d, --download            Download instead of play
+-D, --delete              Delete history
+-s, --syncplay            Use Syncplay
+-S, --select-nth          Select the nth search result
+-q, --quality             best, worst, or a resolution
+-v, --vlc                 Use VLC
+-e, --episode             Episode or range
+-r, --range               Episode range alias
+-a, --allow-adult         Include adult results
+-N, --nextep-countdown    Show release timing
+-U, --update              Update from GitHub Releases
+    --dub                  Use dubbed results
+    --multi-selection      Select multiple episodes
+    --no-detach            Keep the player attached
+    --exit-after-play      Skip the post-playback menu
+```
 
-`-N/--nextep-countdown QUERY` matches Bash ani-cli's release-schedule mode: it displays AnimeSchedule's next raw and subtitled release timestamps and exits without contacting AllAnime.
-
-After a single episode is launched from an interactive terminal, ani-cli-rs keeps the session open with controls for next, replay, previous, episode selection, and quality changes. This menu is also shown when the episode was supplied through `-e/--episode`; use `--exit-after-play` to skip it.
-
-### Keyboard navigation
-
-- Arrow keys navigate every menu; `Tab` and `Shift+Tab` also move down and up.
-- Plain action menus additionally accept `j`/`k` to move, `h`/`l` to change pages, and Space or Enter to select.
-- Fuzzy anime and episode menus accept typing immediately and include a visible Back row.
-- The episode picker includes a multi-selection mode; use Space to toggle episodes and Enter to confirm. Set `ANI_CLI_MULTI_SELECTION=true` or pass `--multi-selection` to open it directly.
-- Download mode labels AllAnime search entries as anime/seasons and checks all selected episodes before starting any transfer.
-- Escape goes back immediately from a fuzzy menu: episodes return to anime results, and anime results return to search. `q` remains available as a filter character for titles containing that letter.
-- In action and quality menus, `q` or Escape returns or exits without treating cancellation as an error.
-- Non-interactive options such as `--select-nth` and `--episode` retain their existing behavior.
+Run `ani-cli-rs --help` for the authoritative list. Environment variables and keyboard controls are documented in the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference).
 
 ## Scriptable commands
 
-### Show IDs and anime titles
-
-The scriptable `episodes`, `links`, `play`, and `download` subcommands require a **show ID**, not an anime name. For example, in this Mkissa URL:
-
-```text
-https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
-```
-
-the show ID is the segment after `/anime/`:
-
-```text
-SyR2K6bGYfKSE6YMm
-```
-
-You can also obtain IDs without opening Mkissa by running:
-
-```console
-ani-cli-rs search --json "anime title"
-```
-
-Use the returned `id` value with a scriptable command:
-
-```console
-ani-cli-rs download SyR2K6bGYfKSE6YMm 1 --title "Anime title" --output ./Downloads
-```
-
-`--title` only controls the player title or output filename; it does not search for an anime. To download by name, use the compatible interactive workflow instead:
-
-```console
-ani-cli-rs --download -e 1 "anime title"
-```
-
 ```console
 ani-cli-rs search --json "frieren"
-ani-cli-rs search --allow-adult --json "search query"
 ani-cli-rs episodes --json SHOW_ID --mode sub
 ani-cli-rs links --json SHOW_ID 1 --quality 1080p
 ani-cli-rs play SHOW_ID 1 --title "Frieren" --no-detach
@@ -199,47 +128,48 @@ ani-cli-rs download SHOW_ID 1 --output ./downloads
 ani-cli-rs debug --refresh
 ani-cli-rs refresh-cipher-map
 ani-cli-rs update --check
-ani-cli-rs update
 ```
 
-`debug` reports dynamic/fallback crypto bootstrap material. `refresh-cipher-map` validates and caches the URL decoder from the latest upstream ani-cli release. Set `RUST_LOG=warn` or `RUST_LOG=debug` for scraper diagnostics.
+`episodes`, `links`, `play`, and `download` require an AllAnime/Mkissa **show ID**, not an anime title. For this URL:
 
-Contributors can find the complete request, decryption, URL decoding, provider resolution, header, and fixture workflow in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md).
-
-`-U/--update` and `update` check GitHub Releases, download the installer from the exact release tag, and use the existing checksum-verifying installation flow. `update --check` only reports whether a newer release exists. On Windows, installation continues after the current executable exits so it can be replaced safely.
-
-## Library
-
-```rust,no_run
-use ani_cli::{AllAnimeClient, SearchOptions, TranslationType};
-
-#[tokio::main]
-async fn main() -> ani_cli::Result<()> {
-    let client = AllAnimeClient::new()?;
-    let shows = client.search_with_options(
-        "search query",
-        TranslationType::Sub,
-        SearchOptions { allow_adult: true },
-    ).await?;
-    let episodes = client.episodes(&shows[0].id, TranslationType::Sub).await?;
-    let streams = client.streams(&shows[0].id, &episodes[0], TranslationType::Sub).await?;
-    println!("{}", streams[0].url);
-    Ok(())
-}
+```text
+https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
 ```
 
-## Diagnostics and tests
+the show ID is `SyR2K6bGYfKSE6YMm`. You can also obtain IDs from `ani-cli-rs search --json "anime title"`. Use `ani-cli-rs --download "anime title"` when you want interactive name and season selection.
 
-Normal tests use local crypto/provider fixtures and do not contact AllAnime:
+See the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference) for every command and JSON workflow.
+
+## Security and antivirus notices
+
+Official Windows binaries are currently unsigned and may trigger SmartScreen or heuristic antivirus warnings. AllAnime support includes runtime bootstrap inspection and cryptographic decoding, which can also produce misleading “obfuscation” labels in automated behavior reports.
+
+Release installers verify published checksums. Users who prefer not to run prebuilt binaries can inspect the tagged source and build it with `cargo build --release --locked`. Read [Security and Privacy](https://github.com/vorlie/ani-cli-rs/wiki/Security-and-Privacy) for the full explanation and manual verification steps.
+
+## Build and test
+
+The project uses Rust 2024 and therefore requires a current stable Rust toolchain.
 
 ```console
+cargo build --release
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo check --all-targets
+cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Live endpoints are intentionally not part of deterministic test runs because AllAnime's bootstrap and source URLs change frequently.
+Target-specific Cargo aliases and release packaging are covered in [Building and Releasing](https://github.com/vorlie/ani-cli-rs/wiki/Building-and-Releasing).
 
-## Deliberately excluded from v1
+## Documentation
 
-rofi/dmenu, Android/Termux and iSH adapters, intro skipping, and system-journal logging are outside desktop-core parity.
+The [project Wiki](https://github.com/vorlie/ani-cli-rs/wiki) contains the full user and contributor documentation. Its source is tracked in [`wiki/`](wiki/Home.md) so documentation changes can be reviewed with code changes.
+
+AllAnime request construction, response decoding, provider resolution, headers, fixtures, and failure diagnostics are documented separately in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md).
+
+## Scope
+
+This project targets desktop Windows, Linux, and macOS source builds. rofi/dmenu integration, Android/Termux and iSH adapters, intro skipping, and system-journal logging are not currently included.
+
+## License
+
+Licensed under [GPL-3.0-only](LICENSE).
