@@ -61,7 +61,7 @@ The scripts verify release archives against their published SHA-256 checksums an
 
 - [mpv](https://mpv.io/) for default playback, or VLC/Syncplay when selected
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
-- Optional: yt-dlp and FFmpeg for HLS downloads and fallbacks
+- Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
 External programs must be available through `PATH`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 

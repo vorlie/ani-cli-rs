@@ -2,6 +2,8 @@
 
 Anikoto downloads use the same preflight and downloader fallback order as AllAnime. Select the catalog with `--provider anikoto`; self-identifying `anikoto:` IDs returned by search route automatically. MegaPlay/KotoCDN HLS is passed through ani-cli-rs's tokenized loopback relay for the lifetime of yt-dlp/FFmpeg so wrapped transport-stream fragments can be consumed without transcoding.
 
+Native MegaPlay subtitle tracks are downloaded after the video. When FFmpeg is available, they are embedded into the MP4 as selectable `mov_text` tracks and the provider's default track is retained. Without FFmpeg—or when muxing fails—the subtitle files remain beside the video as sidecars rather than being discarded.
+
 ## Interactive download by anime name
 
 ```console
