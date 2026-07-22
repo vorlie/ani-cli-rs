@@ -2,8 +2,8 @@ use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
     AllAnimeClient, AniError, DownloadOptions, HistoryEntry, HistoryStore, Player, PlayerKind,
-    PlayerOptions, Result, SearchOptions, SearchResult, TranslationType, choose_quality,
-    download_stream, expand_episode_selection,
+    PlayerOptions, Result, SearchOptions, SearchResult, StreamLink, TranslationType,
+    choose_quality, download_stream, expand_episode_selection,
 };
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
@@ -231,7 +231,8 @@ async fn run(cli: Cli) -> Result<()> {
             .transpose()?
             .unwrap_or_default()
     };
-    let (show, episodes, selected) = if cli.continue_watching {
+    let terminal = std::io::stdin().is_terminal();
+    let (show, episodes, selected, prepared_downloads) = if cli.continue_watching {
         let Some((show, episodes, initial_episode)) =
             continue_selection(&client, &history, mode, cli.select_nth).await?
         else {
@@ -243,7 +244,14 @@ async fn run(cli: Cli) -> Result<()> {
             .or(initial_episode)
             .ok_or_else(|| AniError::Unavailable("history entry has no next episode".into()))?;
         let selected = expand_episode_selection(&selection, &episodes)?;
-        (show, episodes, selected)
+        let prepared = if cli.download {
+            Some(require_download_preflight(
+                preflight_downloads(&client, &show, &selected, mode, &cli.quality).await?,
+            )?)
+        } else {
+            None
+        };
+        (show, episodes, selected, prepared)
     } else {
         let mut initial_query = if cli.query.is_empty() {
             None
@@ -269,24 +277,54 @@ async fn run(cli: Cli) -> Result<()> {
                 )
                 .await?;
             'anime: loop {
-                let Some(show) = select_search_result(&results, cli.select_nth)? else {
+                let purpose = if cli.download {
+                    SelectionPurpose::Download
+                } else {
+                    SelectionPurpose::Watch
+                };
+                let Some(show) = select_search_result(&results, cli.select_nth, purpose)? else {
                     continue 'search;
                 };
                 let episodes = client.episodes(&show.id, mode).await?;
-                let selection = if let Some(selection) = cli.episode.clone() {
-                    selection
-                } else {
-                    let Some(selection) = select_initial_episodes(&episodes, cli.multi_selection)?
-                    else {
-                        if results.len() == 1 {
-                            continue 'search;
-                        }
-                        continue 'anime;
+                'episode: loop {
+                    let selection = if let Some(selection) = cli.episode.clone() {
+                        selection
+                    } else {
+                        let Some(selection) =
+                            select_initial_episodes(&episodes, cli.multi_selection, purpose)?
+                        else {
+                            if results.len() == 1 {
+                                continue 'search;
+                            }
+                            continue 'anime;
+                        };
+                        selection
                     };
-                    selection
-                };
-                let selected = expand_episode_selection(&selection, &episodes)?;
-                break 'search (show, episodes, selected);
+                    let selected = expand_episode_selection(&selection, &episodes)?;
+                    let prepared = if cli.download {
+                        match preflight_downloads(&client, &show, &selected, mode, &cli.quality)
+                            .await?
+                        {
+                            DownloadPreflight::Ready(prepared) => Some(prepared),
+                            DownloadPreflight::Unavailable(failures)
+                                if can_retry_download_selection(
+                                    cli.episode.is_some(),
+                                    terminal,
+                                    cli.continue_watching,
+                                ) =>
+                            {
+                                print_preflight_failures(&failures);
+                                continue 'episode;
+                            }
+                            DownloadPreflight::Unavailable(failures) => {
+                                return Err(download_preflight_error(&failures));
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    break 'search (show, episodes, selected, prepared);
+                }
             }
         }
     };
@@ -303,16 +341,17 @@ async fn run(cli: Cli) -> Result<()> {
         download_directory,
         player: &player,
     };
-    for episode in &selected {
-        play_or_download(&context, episode, &cli.quality, cli.download).await?;
+    if let Some(prepared) = prepared_downloads {
+        for episode in &prepared {
+            execute_prepared_episode(&context, episode, true).await?;
+        }
+    } else {
+        for episode in &selected {
+            play_or_download(&context, episode, &cli.quality, false).await?;
+        }
     }
 
-    if should_offer_playback_controls(
-        selected.len(),
-        std::io::stdin().is_terminal(),
-        cli.download,
-        cli.exit_after_play,
-    ) {
+    if should_offer_playback_controls(selected.len(), terminal, cli.download, cli.exit_after_play) {
         interactive_after_play(&context, &selected[0], &cli.quality).await?;
     }
     Ok(())
@@ -505,6 +544,7 @@ fn output<T: Serialize>(values: &[T], json: bool, text: impl Fn(&T) -> String) -
 fn select_search_result(
     results: &[SearchResult],
     nth: Option<usize>,
+    purpose: SelectionPurpose,
 ) -> Result<Option<SearchResult>> {
     if results.is_empty() {
         return Err(AniError::Unavailable("no search results".into()));
@@ -524,7 +564,7 @@ fn select_search_result(
                 .map(|value| format!("{} ({} episodes)", value.name, value.episodes)),
         );
         let Some(index) = FuzzySelect::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select anime (Esc: back, type to filter)")
+            .with_prompt(purpose.anime_prompt())
             .items(&items)
             .default(1)
             .interact_opt()
@@ -538,6 +578,37 @@ fn select_search_result(
         index - 1
     };
     Ok(Some(results[index].clone()))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectionPurpose {
+    Watch,
+    Download,
+}
+
+impl SelectionPurpose {
+    fn anime_prompt(self) -> &'static str {
+        match self {
+            Self::Watch => "Select anime (Esc: back, type to filter)",
+            Self::Download => "Select anime / season to download (Esc: back, type to filter)",
+        }
+    }
+
+    fn episode_prompt(self) -> &'static str {
+        match self {
+            Self::Watch => "Select episode (Esc: back, type to filter)",
+            Self::Download => "Select episode to download (Esc: back, type to filter)",
+        }
+    }
+
+    fn multiple_episode_prompt(self) -> &'static str {
+        match self {
+            Self::Watch => "Select episodes (Space: toggle, Enter: confirm, Esc: back)",
+            Self::Download => {
+                "Select episodes to download (Space: toggle, Enter: confirm, Esc: back)"
+            }
+        }
+    }
 }
 
 fn select_episode(episodes: &[String]) -> Result<Option<String>> {
@@ -557,14 +628,18 @@ fn select_episode(episodes: &[String]) -> Result<Option<String>> {
     Ok(index.and_then(|index| index.checked_sub(1).map(|index| episodes[index].clone())))
 }
 
-fn select_initial_episodes(episodes: &[String], multi: bool) -> Result<Option<String>> {
+fn select_initial_episodes(
+    episodes: &[String],
+    multi: bool,
+    purpose: SelectionPurpose,
+) -> Result<Option<String>> {
     if episodes.is_empty() {
         return Err(AniError::Unavailable(
             "show has no episodes in this translation".into(),
         ));
     }
     if multi {
-        return select_multiple_episodes(episodes);
+        return select_multiple_episodes(episodes, purpose);
     }
 
     let mut items = vec![
@@ -573,7 +648,7 @@ fn select_initial_episodes(episodes: &[String], multi: bool) -> Result<Option<St
     ];
     items.extend(episodes.iter().cloned());
     let Some(index) = FuzzySelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select episode (Esc: back, type to filter)")
+        .with_prompt(purpose.episode_prompt())
         .items(&items)
         .default(episodes.len() + 1)
         .interact_opt()
@@ -584,14 +659,17 @@ fn select_initial_episodes(episodes: &[String], multi: bool) -> Result<Option<St
 
     match index {
         0 => Ok(None),
-        1 => select_multiple_episodes(episodes),
+        1 => select_multiple_episodes(episodes, purpose),
         index => Ok(Some(episodes[index - 2].clone())),
     }
 }
 
-fn select_multiple_episodes(episodes: &[String]) -> Result<Option<String>> {
+fn select_multiple_episodes(
+    episodes: &[String],
+    purpose: SelectionPurpose,
+) -> Result<Option<String>> {
     let Some(selected) = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select episodes (Space: toggle, Enter: confirm, Esc: back)")
+        .with_prompt(purpose.multiple_episode_prompt())
         .items(episodes)
         .interact_opt()
         .map_err(dialog_error)?
@@ -700,23 +778,151 @@ struct PlaybackContext<'a> {
     player: &'a Player,
 }
 
-async fn play_or_download(
+#[derive(Debug)]
+struct PreparedEpisode {
+    episode: String,
+    stream: StreamLink,
+}
+
+#[derive(Debug)]
+struct UnavailableDownload {
+    episode: String,
+    reason: String,
+}
+
+#[derive(Debug)]
+enum DownloadPreflight {
+    Ready(Vec<PreparedEpisode>),
+    Unavailable(Vec<UnavailableDownload>),
+}
+
+async fn preflight_downloads(
+    client: &AllAnimeClient,
+    show: &SearchResult,
+    episodes: &[String],
+    mode: TranslationType,
+    quality: &str,
+) -> Result<DownloadPreflight> {
+    let mut results = Vec::with_capacity(episodes.len());
+    for episode in episodes {
+        println!("Checking {} episode {episode} sources...", show.name);
+        let result = async {
+            let streams = client.streams(&show.id, episode, mode).await?;
+            let stream = choose_download_stream(&streams, quality)
+                .ok_or_else(|| AniError::Unavailable("no downloadable streams".into()))?;
+            Ok(PreparedEpisode {
+                episode: episode.clone(),
+                stream,
+            })
+        }
+        .await;
+        results.push((episode.clone(), result));
+    }
+    collect_download_preflight(results)
+}
+
+fn choose_download_stream(streams: &[StreamLink], quality: &str) -> Option<StreamLink> {
+    let downloadable = streams
+        .iter()
+        .filter(|stream| stream.downloadable)
+        .cloned()
+        .collect::<Vec<_>>();
+    choose_quality(&downloadable, quality).cloned()
+}
+
+fn collect_download_preflight(
+    results: Vec<(String, Result<PreparedEpisode>)>,
+) -> Result<DownloadPreflight> {
+    let mut prepared = Vec::with_capacity(results.len());
+    let mut unavailable = Vec::new();
+    for (episode, result) in results {
+        match result {
+            Ok(value) => prepared.push(value),
+            Err(AniError::Unavailable(reason)) => {
+                unavailable.push(UnavailableDownload { episode, reason });
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if unavailable.is_empty() {
+        Ok(DownloadPreflight::Ready(prepared))
+    } else {
+        Ok(DownloadPreflight::Unavailable(unavailable))
+    }
+}
+
+fn can_retry_download_selection(explicit_episode: bool, terminal: bool, continuing: bool) -> bool {
+    !explicit_episode && terminal && !continuing
+}
+
+fn print_preflight_failures(failures: &[UnavailableDownload]) {
+    eprintln!("No downloads started. These episodes have no downloadable sources:");
+    for failure in failures {
+        eprintln!("  Episode {}: {}", failure.episode, failure.reason);
+    }
+    eprintln!("Choose episodes again, or go back to select another anime / season.");
+}
+
+fn download_preflight_error(failures: &[UnavailableDownload]) -> AniError {
+    let details = failures
+        .iter()
+        .map(|failure| format!("episode {} ({})", failure.episode, failure.reason))
+        .collect::<Vec<_>>()
+        .join(", ");
+    AniError::Unavailable(format!(
+        "download preflight failed; no files were downloaded: {details}"
+    ))
+}
+
+fn require_download_preflight(preflight: DownloadPreflight) -> Result<Vec<PreparedEpisode>> {
+    match preflight {
+        DownloadPreflight::Ready(prepared) => Ok(prepared),
+        DownloadPreflight::Unavailable(failures) => Err(download_preflight_error(&failures)),
+    }
+}
+
+async fn prepare_episode(
     context: &PlaybackContext<'_>,
     episode: &str,
     quality: &str,
-    download: bool,
-) -> Result<()> {
+) -> Result<PreparedEpisode> {
     println!("Fetching {} episode {episode}...", context.show.name);
     let streams = context
         .client
         .streams(&context.show.id, episode, context.mode)
         .await?;
     let stream = choose_quality(&streams, quality)
+        .cloned()
         .ok_or_else(|| AniError::Unavailable("no streams".into()))?;
-    let title = format!("{} Episode {episode}", clean_title(&context.show.name));
+    Ok(PreparedEpisode {
+        episode: episode.into(),
+        stream,
+    })
+}
+
+async fn play_or_download(
+    context: &PlaybackContext<'_>,
+    episode: &str,
+    quality: &str,
+    download: bool,
+) -> Result<()> {
+    let prepared = prepare_episode(context, episode, quality).await?;
+    execute_prepared_episode(context, &prepared, download).await
+}
+
+async fn execute_prepared_episode(
+    context: &PlaybackContext<'_>,
+    prepared: &PreparedEpisode,
+    download: bool,
+) -> Result<()> {
+    let title = format!(
+        "{} Episode {}",
+        clean_title(&context.show.name),
+        prepared.episode
+    );
     if download {
         let path = download_stream(
-            stream,
+            &prepared.stream,
             &DownloadOptions {
                 directory: context.download_directory.clone(),
                 filename: title,
@@ -725,12 +931,12 @@ async fn play_or_download(
         .await?;
         println!("Saved {}", path.display());
     } else {
-        context.player.play(stream, &title).await?;
+        context.player.play(&prepared.stream, &title).await?;
     }
     context
         .history
         .update(HistoryEntry {
-            episode: episode.into(),
+            episode: prepared.episode.clone(),
             show_id: context.show.id.clone(),
             title: context.show.name.clone(),
         })
@@ -1007,5 +1213,120 @@ mod tests {
         assert!(!should_offer_playback_controls(1, false, false, false));
         assert!(!should_offer_playback_controls(1, true, true, false));
         assert!(!should_offer_playback_controls(1, true, false, true));
+    }
+
+    fn test_stream(resolution: &str, downloadable: bool) -> StreamLink {
+        StreamLink {
+            url: format!("https://media.example/{resolution}.mp4"),
+            resolution: resolution.into(),
+            hls: false,
+            provider: "Test".into(),
+            downloadable,
+            headers: ani_cli::RequestHeaders::default(),
+        }
+    }
+
+    fn prepared(episode: &str) -> PreparedEpisode {
+        PreparedEpisode {
+            episode: episode.into(),
+            stream: test_stream("720p", true),
+        }
+    }
+
+    #[test]
+    fn download_quality_ignores_non_downloadable_streams() {
+        let streams = vec![test_stream("1080p", false), test_stream("720p", true)];
+
+        assert_eq!(
+            choose_download_stream(&streams, "best").unwrap().resolution,
+            "720p"
+        );
+        assert_eq!(
+            choose_download_stream(&streams, "1080p")
+                .unwrap()
+                .resolution,
+            "720p"
+        );
+    }
+
+    #[test]
+    fn successful_download_preflight_preserves_episode_order() {
+        let preflight = collect_download_preflight(vec![
+            ("1".into(), Ok(prepared("1"))),
+            ("2.5".into(), Ok(prepared("2.5"))),
+            ("10".into(), Ok(prepared("10"))),
+        ])
+        .unwrap();
+        let DownloadPreflight::Ready(values) = preflight else {
+            panic!("expected a ready download batch");
+        };
+
+        assert_eq!(
+            values
+                .iter()
+                .map(|value| value.episode.as_str())
+                .collect::<Vec<_>>(),
+            ["1", "2.5", "10"]
+        );
+    }
+
+    #[test]
+    fn download_preflight_aggregates_only_unavailable_episodes() {
+        let preflight = collect_download_preflight(vec![
+            ("1".into(), Ok(prepared("1"))),
+            (
+                "2".into(),
+                Err(AniError::Unavailable("no supported sources".into())),
+            ),
+            (
+                "4".into(),
+                Err(AniError::Unavailable("video was removed".into())),
+            ),
+        ])
+        .unwrap();
+        let DownloadPreflight::Unavailable(values) = preflight else {
+            panic!("expected unavailable episodes");
+        };
+
+        assert_eq!(
+            values
+                .iter()
+                .map(|value| value.episode.as_str())
+                .collect::<Vec<_>>(),
+            ["2", "4"]
+        );
+    }
+
+    #[test]
+    fn download_preflight_keeps_non_availability_errors_fatal() {
+        let error = collect_download_preflight(vec![(
+            "1".into(),
+            Err(AniError::Network("offline".into())),
+        )])
+        .unwrap_err();
+
+        assert!(matches!(error, AniError::Network(_)));
+    }
+
+    #[test]
+    fn only_prompted_terminal_downloads_retry_selection() {
+        assert!(can_retry_download_selection(false, true, false));
+        assert!(!can_retry_download_selection(true, true, false));
+        assert!(!can_retry_download_selection(false, false, false));
+        assert!(!can_retry_download_selection(false, true, true));
+    }
+
+    #[test]
+    fn download_prompts_name_the_anime_entry_as_a_season() {
+        assert!(
+            SelectionPurpose::Download
+                .anime_prompt()
+                .contains("anime / season")
+        );
+        assert!(
+            SelectionPurpose::Download
+                .episode_prompt()
+                .contains("download")
+        );
     }
 }
