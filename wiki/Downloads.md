@@ -2,8 +2,6 @@
 
 Anikoto downloads use the same preflight and downloader fallback order as AllAnime. Select the catalog with `--provider anikoto`; self-identifying `anikoto:` IDs returned by search route automatically. MegaPlay/KotoCDN HLS is passed through ani-cli-rs's tokenized loopback relay for the lifetime of yt-dlp/FFmpeg so wrapped transport-stream fragments can be consumed without transcoding.
 
-Native MegaPlay subtitle tracks are downloaded after the video. When FFmpeg is available, they are embedded into the MP4 as selectable `mov_text` tracks and the provider's default track is retained. Without FFmpeg—or when muxing fails—the subtitle files remain beside the video as sidecars rather than being discarded.
-
 ## Interactive download by anime name
 
 ```console
@@ -74,6 +72,22 @@ Providers known to reject excessive parallel requests, including Mp4Upload, rece
 4. error if none succeeds.
 
 Install the tools through the operating system and ensure their executable names are in `PATH`.
+
+## Anikoto subtitle tracks
+
+Native MegaPlay sources can provide several external subtitle tracks. ani-cli-rs downloads every available track; there is intentionally no language picker before downloading. Select the preferred language from the media player's subtitle menu during playback.
+
+When FFmpeg is available, subtitles are embedded into the final MP4 as selectable `mov_text` tracks. Each track receives:
+
+- its complete provider label as the track title;
+- an ISO 639 language tag when the provider label identifies a supported language;
+- the provider-designated default status, or the first track as a fallback default.
+
+Language tags allow players such as VLC to display `English`, `Polish`, or another language instead of generic names such as `Track 1`. Unknown provider labels remain embedded with their original title and an undetermined-language tag.
+
+If FFmpeg is unavailable or subtitle muxing fails, the completed video is preserved and downloaded subtitles remain beside it as sidecar files. The CLI reports this fallback. Installing FFmpeg and ensuring `ffmpeg` is available through `PATH` enables MP4 embedding.
+
+AllAnime streams are unaffected unless a resolved source explicitly supplies external subtitle metadata.
 
 ## Why files use `.part`
 
