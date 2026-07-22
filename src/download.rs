@@ -8,7 +8,11 @@ use futures_util::StreamExt;
 use reqwest::header;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, process::Command};
 
-use crate::{AniError, Result, StreamLink, relay_stream, requires_hls_relay};
+use crate::{
+    AniError, RequestHeaders, Result, StreamLink, SubtitleTrack, relay_stream, requires_hls_relay,
+};
+
+const MAX_SUBTITLE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct DownloadOptions {
@@ -19,9 +23,191 @@ pub struct DownloadOptions {
 pub async fn download_stream(stream: &StreamLink, options: &DownloadOptions) -> Result<PathBuf> {
     if requires_hls_relay(stream) {
         let (_relay, local) = relay_stream(stream).await?;
-        return download_stream_inner(&local, options).await;
+        let target = download_stream_inner(&local, options).await?;
+        attach_subtitles(&local, &target).await?;
+        return Ok(target);
     }
-    download_stream_inner(stream, options).await
+    let target = download_stream_inner(stream, options).await?;
+    attach_subtitles(stream, &target).await?;
+    Ok(target)
+}
+
+#[derive(Debug)]
+struct DownloadedSubtitle {
+    path: PathBuf,
+    label: String,
+    default: bool,
+}
+
+async fn attach_subtitles(stream: &StreamLink, target: &Path) -> Result<()> {
+    if stream.subtitles.is_empty() {
+        return Ok(());
+    }
+    let mut subtitles = Vec::new();
+    for (index, track) in stream.subtitles.iter().enumerate() {
+        match download_subtitle_track(track, &stream.headers, target, index).await {
+            Ok(subtitle) => subtitles.push(subtitle),
+            Err(error) => eprintln!("Could not download subtitle '{}': {error}", track.label),
+        }
+    }
+    if subtitles.is_empty() {
+        eprintln!("No provider subtitle tracks could be downloaded.");
+        return Ok(());
+    }
+    if !program_available("ffmpeg").await {
+        eprintln!(
+            "FFmpeg is unavailable; saved {} subtitle track(s) beside the video.",
+            subtitles.len()
+        );
+        return Ok(());
+    }
+
+    let stem = target
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("episode");
+    let muxed = target.with_file_name(format!("{stem}.subtitled.part.mp4"));
+    let args = subtitle_mux_args(target, &subtitles, &muxed);
+    let status = Command::new("ffmpeg").args(&args).status().await;
+    match status {
+        Ok(status) if status.success() => {
+            if tokio::fs::try_exists(target).await? {
+                tokio::fs::remove_file(target).await?;
+            }
+            tokio::fs::rename(&muxed, target).await?;
+            for subtitle in subtitles {
+                let _ = tokio::fs::remove_file(subtitle.path).await;
+            }
+            eprintln!("Embedded provider subtitles into the downloaded MP4.");
+        }
+        Ok(status) => {
+            let _ = tokio::fs::remove_file(&muxed).await;
+            eprintln!(
+                "FFmpeg subtitle muxing exited with {}; subtitle sidecars were kept.",
+                status.code().unwrap_or(1)
+            );
+        }
+        Err(error) => {
+            let _ = tokio::fs::remove_file(&muxed).await;
+            eprintln!(
+                "Could not start FFmpeg for subtitle muxing ({error}); subtitle sidecars were kept."
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn download_subtitle_track(
+    track: &SubtitleTrack,
+    headers: &RequestHeaders,
+    target: &Path,
+    index: usize,
+) -> Result<DownloadedSubtitle> {
+    let client = reqwest::Client::builder().build()?;
+    let mut request = client.get(&track.url);
+    if let Some(referer) = &headers.referer {
+        request = request.header(header::REFERER, referer);
+    }
+    if let Some(origin) = &headers.origin {
+        request = request.header(header::ORIGIN, origin);
+    }
+    for (name, value) in &headers.extra {
+        request = request.header(name, value);
+    }
+    let response = request.send().await?;
+    if !response.status().is_success() {
+        return Err(AniError::Download(format!(
+            "subtitle server returned {}",
+            response.status()
+        )));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SUBTITLE_BYTES as u64)
+    {
+        return Err(AniError::Download(
+            "subtitle track exceeds the 16 MiB limit".into(),
+        ));
+    }
+    let bytes = response.bytes().await?;
+    if bytes.len() > MAX_SUBTITLE_BYTES {
+        return Err(AniError::Download(
+            "subtitle track exceeds the 16 MiB limit".into(),
+        ));
+    }
+    let stem = target
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("episode");
+    let label = sanitize_filename(&track.label);
+    let extension = subtitle_extension(&track.url);
+    let path = target.with_file_name(format!("{stem}.{index}.{label}.{extension}"));
+    tokio::fs::write(&path, bytes).await?;
+    Ok(DownloadedSubtitle {
+        path,
+        label: track.label.clone(),
+        default: track.default,
+    })
+}
+
+fn subtitle_extension(url: &str) -> &'static str {
+    let extension = url::Url::parse(url).ok().and_then(|url| {
+        Path::new(url.path())
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_ascii_lowercase)
+    });
+    match extension.as_deref() {
+        Some("srt") => "srt",
+        Some("ass") => "ass",
+        Some("ssa") => "ssa",
+        _ => "vtt",
+    }
+}
+
+fn subtitle_mux_args(
+    target: &Path,
+    subtitles: &[DownloadedSubtitle],
+    output: &Path,
+) -> Vec<String> {
+    let mut args = vec![
+        "-y".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-stats".into(),
+        "-i".into(),
+        target.to_string_lossy().into_owned(),
+    ];
+    for subtitle in subtitles {
+        args.extend(["-i".into(), subtitle.path.to_string_lossy().into_owned()]);
+    }
+    args.extend(["-map".into(), "0:v?".into(), "-map".into(), "0:a?".into()]);
+    for index in 0..subtitles.len() {
+        args.extend(["-map".into(), format!("{}:0", index + 1)]);
+    }
+    args.extend([
+        "-c:v".into(),
+        "copy".into(),
+        "-c:a".into(),
+        "copy".into(),
+        "-c:s".into(),
+        "mov_text".into(),
+    ]);
+    let default_index = subtitles.iter().position(|subtitle| subtitle.default);
+    for (index, subtitle) in subtitles.iter().enumerate() {
+        args.extend([
+            format!("-metadata:s:s:{index}"),
+            format!("title={}", subtitle.label),
+            format!("-disposition:s:{index}"),
+            if Some(index) == default_index || (default_index.is_none() && index == 0) {
+                "default".into()
+            } else {
+                "0".into()
+            },
+        ]);
+    }
+    args.push(output.to_string_lossy().into_owned());
+    args
 }
 
 async fn download_stream_inner(stream: &StreamLink, options: &DownloadOptions) -> Result<PathBuf> {
@@ -571,5 +757,47 @@ mod tests {
             args.windows(2)
                 .any(|args| args == ["--add-headers", "Origin:https://example.com"])
         );
+    }
+
+    #[test]
+    fn subtitle_mux_maps_tracks_and_selects_the_provider_default() {
+        let subtitles = vec![
+            DownloadedSubtitle {
+                path: "English.vtt".into(),
+                label: "English".into(),
+                default: false,
+            },
+            DownloadedSubtitle {
+                path: "Polish.ass".into(),
+                label: "Polish".into(),
+                default: true,
+            },
+        ];
+        let args = subtitle_mux_args(
+            Path::new("episode.mp4"),
+            &subtitles,
+            Path::new("episode.subtitled.part.mp4"),
+        );
+        assert!(args.windows(2).any(|args| args == ["-map", "1:0"]));
+        assert!(args.windows(2).any(|args| args == ["-map", "2:0"]));
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["-disposition:s:1", "default"])
+        );
+        assert!(args.contains(&"-c:s".into()));
+        assert!(args.contains(&"mov_text".into()));
+    }
+
+    #[test]
+    fn subtitle_extensions_are_restricted_to_supported_text_formats() {
+        assert_eq!(
+            subtitle_extension("https://cdn.example/subtitle.srt?token=1"),
+            "srt"
+        );
+        assert_eq!(
+            subtitle_extension("https://cdn.example/subtitle.ass"),
+            "ass"
+        );
+        assert_eq!(subtitle_extension("http://127.0.0.1:1/r/token"), "vtt");
     }
 }
