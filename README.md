@@ -1,6 +1,6 @@
 # ani-cli-rs
 
-A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli), focused on the current AllAnime workflow.
+A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) with AllAnime and Anikoto/MegaPlay catalogs.
 
 `ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
@@ -19,7 +19,8 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli), 
 ## Features
 
 - Interactive anime/season and episode selection
-- Subbed and dubbed AllAnime search and playback
+- Subbed and dubbed AllAnime or Anikoto search and playback
+- Native MegaPlay source extraction and transparent KotoCDN HLS unwrapping
 - mpv, VLC, and Syncplay support
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
@@ -80,6 +81,7 @@ ani-cli-rs -e 2-4 "one piece"
 ani-cli-rs --continue
 ani-cli-rs --download "anime title"
 ani-cli-rs --allow-adult "search query"
+ani-cli-rs --provider anikoto "dandadan"
 ```
 
 Interactive playback remains open after an episode and offers next, replay, previous, episode-selection, and quality controls. Add `--exit-after-play` to exit immediately instead.
@@ -109,6 +111,7 @@ Supported compatibility flags include:
 -a, --allow-adult         Include adult results
 -N, --nextep-countdown    Show release timing
 -U, --update              Update from GitHub Releases
+-p, --provider            allanime (default) or anikoto
     --dub                  Use dubbed results
     --multi-selection      Select multiple episodes
     --no-detach            Keep the player attached
@@ -121,6 +124,7 @@ Run `ani-cli-rs --help` for the authoritative list. Environment variables and ke
 
 ```console
 ani-cli-rs search --json "frieren"
+ani-cli-rs -p anikoto search --json "frieren"
 ani-cli-rs episodes --json SHOW_ID --mode sub
 ani-cli-rs links --json SHOW_ID 1 --quality 1080p
 ani-cli-rs play SHOW_ID 1 --title "Frieren" --no-detach
@@ -130,13 +134,15 @@ ani-cli-rs refresh-cipher-map
 ani-cli-rs update --check
 ```
 
-`episodes`, `links`, `play`, and `download` require an AllAnime/Mkissa **show ID**, not an anime title. For this URL:
+`episodes`, `links`, `play`, and `download` require the **show ID returned by `search`**, not an anime title. AllAnime also accepts the ID in a Mkissa URL. For this URL:
 
 ```text
 https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
 ```
 
-the show ID is `SyR2K6bGYfKSE6YMm`. You can also obtain IDs from `ani-cli-rs search --json "anime title"`. Use `ani-cli-rs --download "anime title"` when you want interactive name and season selection.
+the show ID is `SyR2K6bGYfKSE6YMm`. Anikoto search returns self-identifying IDs beginning with `anikoto:`; those IDs route automatically. Raw numeric Anikoto series IDs require `--provider anikoto`. Use `ani-cli-rs --download "anime title"` when you want interactive name and season selection.
+
+Set `ANI_CLI_PROVIDER=anikoto` to make Anikoto the interactive/search default. AllAnime remains the compatibility default. Provider catalogs are intentionally not combined and playback never silently crosses between them.
 
 See the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference) for every command and JSON workflow.
 
@@ -164,7 +170,7 @@ Target-specific Cargo aliases and release packaging are covered in [Building and
 
 The [project Wiki](https://github.com/vorlie/ani-cli-rs/wiki) contains the full user and contributor documentation. Its source is tracked in [`wiki/`](wiki/Home.md) so documentation changes can be reviewed with code changes.
 
-AllAnime request construction, response decoding, provider resolution, headers, fixtures, and failure diagnostics are documented separately in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md).
+Provider internals are documented in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md) and [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md).
 
 ## Scope
 

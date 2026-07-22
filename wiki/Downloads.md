@@ -1,5 +1,7 @@
 # Downloads
 
+Anikoto downloads use the same preflight and downloader fallback order as AllAnime. Select the catalog with `--provider anikoto`; self-identifying `anikoto:` IDs returned by search route automatically. MegaPlay/KotoCDN HLS is passed through ani-cli-rs's tokenized loopback relay for the lifetime of yt-dlp/FFmpeg so wrapped transport-stream fragments can be consumed without transcoding.
+
 ## Interactive download by anime name
 
 ```console

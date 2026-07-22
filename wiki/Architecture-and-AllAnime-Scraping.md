@@ -1,4 +1,4 @@
-# Architecture and AllAnime Scraping
+# Provider Architecture and AllAnime Scraping
 
 This page is for contributors diagnosing scraper changes. It summarizes the pipeline; the repository's [`docs/ALLANIME-SCRAPING.md`](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ALLANIME-SCRAPING.md) remains the detailed source-adjacent reference.
 
@@ -13,6 +13,10 @@ This page is for contributors diagnosing scraper changes. It summarizes the pipe
 | `player` | Safe process arguments for mpv, VLC, and Syncplay |
 | `download` | aria2/yt-dlp/FFmpeg/Rust transfer strategy |
 | `history` | Bash-compatible `ani-hsts` persistence |
+| `anikoto` | Anikoto/AniList catalog merge and native MegaPlay extraction |
+| `hls_relay` | Loopback playlist rewriting and confirmed PNG-wrapped TS removal |
+
+AllAnime is the default provider. Anikoto is explicitly selected with `--provider anikoto`, while its `anikoto:` metadata IDs auto-route later commands. The detailed native workflow and reusable provider notes are in [`docs/ANIKOTO-KOTOCDN.md`](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-KOTOCDN.md).
 
 ## Search and episode discovery
 

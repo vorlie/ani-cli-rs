@@ -1,6 +1,6 @@
 # ani-cli-rs Wiki
 
-`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches AllAnime, resolves episode sources, launches desktop media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
+`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches AllAnime or Anikoto, resolves episode sources, launches desktop media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
 
 The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`. The project also exposes an `ani_cli` Rust library.
 
@@ -13,7 +13,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 - **Something failed:** [Troubleshooting](Troubleshooting)
 - **Checking a release:** [Security and Privacy](Security-and-Privacy)
 - **Building or packaging:** [Building and Releasing](Building-and-Releasing)
-- **Working on the scraper:** [Architecture and AllAnime Scraping](Architecture-and-AllAnime-Scraping)
+- **Working on a provider:** [Provider Architecture](Architecture-and-AllAnime-Scraping) and the [Anikoto/KotoCDN reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-KOTOCDN.md)
 
 ## Platform support
 

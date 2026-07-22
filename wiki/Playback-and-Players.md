@@ -1,5 +1,7 @@
 # Playback and Players
 
+AllAnime is the default catalog. Select native Anikoto/MegaPlay playback with `--provider anikoto` or `ANI_CLI_PROVIDER=anikoto`. For MegaPlay-associated HLS, ani-cli-rs starts a loopback-only relay and remains attached to the player until it exits; this is required to translate KotoCDN's confirmed PNG-wrapped transport-stream segments. Normal AllAnime detach behavior is unchanged.
+
 ## mpv
 
 mpv is the default player. Install it through your operating system and ensure `mpv` (`mpv.exe` on Windows) is in `PATH`.
