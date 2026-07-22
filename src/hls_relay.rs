@@ -26,10 +26,18 @@ const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESOURCES: usize = 16_384;
 const SCAN_LIMIT: usize = 64 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum ResourceKind {
+    Playlist,
+    Segment,
+    Resource,
+}
+
 #[derive(Clone)]
 struct Registered {
     url: Url,
     headers: RequestHeaders,
+    kind: ResourceKind,
 }
 
 struct State {
@@ -77,7 +85,12 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
         counter: AtomicU64::new(0),
         secret: format!("{}-{}", std::process::id(), unix_nanos()),
     });
-    let token = register(&state, upstream, stream.headers.clone())?;
+    let token = register(
+        &state,
+        upstream,
+        stream.headers.clone(),
+        ResourceKind::Playlist,
+    )?;
     let server_state = Arc::clone(&state);
     let task = tokio::spawn(async move {
         loop {
@@ -99,7 +112,7 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
     local.headers = RequestHeaders::default();
     for track in &mut local.subtitles {
         let url = validate_upstream(&track.url)?;
-        let token = register(&state, url, stream.headers.clone())?;
+        let token = register(&state, url, stream.headers.clone(), ResourceKind::Resource)?;
         track.url = local_url(address, &token);
     }
     Ok((
@@ -174,11 +187,13 @@ async fn handle_inner(
     for (name, value) in &registered.headers.extra {
         upstream = upstream.header(name, value);
     }
-    for name in [
-        header::RANGE,
-        header::IF_NONE_MATCH,
-        header::IF_MODIFIED_SINCE,
-    ] {
+    let conditional_headers = [header::IF_NONE_MATCH, header::IF_MODIFIED_SINCE];
+    if registered.kind != ResourceKind::Segment
+        && let Some(value) = request.headers().get(header::RANGE)
+    {
+        upstream = upstream.header(header::RANGE, value);
+    }
+    for name in conditional_headers {
         if let Some(value) = request.headers().get(&name) {
             upstream = upstream.header(name, value);
         }
@@ -198,7 +213,8 @@ async fn handle_inner(
         return Ok(result);
     }
     let bytes = upstream.bytes().await?.to_vec();
-    let playlist = content_type.contains("mpegurl")
+    let playlist = registered.kind == ResourceKind::Playlist
+        || content_type.contains("mpegurl")
         || registered
             .url
             .path()
@@ -220,30 +236,40 @@ async fn handle_inner(
             rewritten.into_bytes(),
         ));
     }
-    let (bytes, stripped) = strip_png_wrapper(bytes);
-    let mut result = response(
-        status,
-        if stripped {
-            "video/mp2t"
-        } else {
-            &content_type
-        },
-        bytes,
-    );
+    let (bytes, stripped) = if registered.kind == ResourceKind::Segment {
+        strip_png_wrapper(bytes)
+    } else {
+        (bytes, false)
+    };
+    let corrected_type = corrected_content_type(&registered, &content_type, stripped);
+    let mut result = response(status, &corrected_type, bytes);
     copy_upstream_headers(&upstream_headers, result.headers_mut(), false);
     Ok(result)
 }
 
 fn rewrite_playlist(state: &Arc<State>, parent: &Registered, body: &str) -> Result<String> {
     let mut output = String::with_capacity(body.len() + 256);
+    let mut next_uri_is_playlist = false;
     for line in body.lines() {
         let trimmed = line.trim();
         let rewritten = if trimmed.is_empty() {
-            String::new()
+            line.to_owned()
         } else if trimmed.starts_with('#') {
+            if trimmed
+                .to_ascii_uppercase()
+                .starts_with("#EXT-X-STREAM-INF:")
+            {
+                next_uri_is_playlist = true;
+            }
             rewrite_uri_attributes(state, parent, line)?
         } else {
-            relay_reference(state, parent, trimmed)?
+            let kind = if next_uri_is_playlist {
+                ResourceKind::Playlist
+            } else {
+                ResourceKind::Segment
+            };
+            next_uri_is_playlist = false;
+            relay_reference(state, parent, trimmed, kind)?
         };
         output.push_str(&rewritten);
         output.push('\n');
@@ -254,32 +280,60 @@ fn rewrite_playlist(state: &Arc<State>, parent: &Registered, body: &str) -> Resu
 fn rewrite_uri_attributes(state: &Arc<State>, parent: &Registered, line: &str) -> Result<String> {
     let mut output = line.to_owned();
     let mut offset = 0;
-    while let Some(found) = output[offset..].find("URI=\"") {
-        let start = offset + found + 5;
-        let Some(end_rel) = output[start..].find('"') else {
+    let upper = line.trim().to_ascii_uppercase();
+    let kind =
+        if upper.starts_with("#EXT-X-MEDIA:") || upper.starts_with("#EXT-X-I-FRAME-STREAM-INF:") {
+            ResourceKind::Playlist
+        } else {
+            ResourceKind::Resource
+        };
+    while let Some(found) = output[offset..].to_ascii_uppercase().find("URI=") {
+        let quote_at = offset + found + 4;
+        let Some(quote) = output.as_bytes().get(quote_at).copied() else {
+            break;
+        };
+        if quote != b'\'' && quote != b'"' {
+            offset = quote_at + 1;
+            continue;
+        }
+        let start = quote_at + 1;
+        let Some(end_rel) = output.as_bytes()[start..]
+            .iter()
+            .position(|value| *value == quote)
+        else {
             break;
         };
         let end = start + end_rel;
-        let rewritten = relay_reference(state, parent, &output[start..end])?;
+        let rewritten = relay_reference(state, parent, &output[start..end], kind)?;
         output.replace_range(start..end, &rewritten);
         offset = start + rewritten.len() + 1;
     }
     Ok(output)
 }
 
-fn relay_reference(state: &Arc<State>, parent: &Registered, reference: &str) -> Result<String> {
+fn relay_reference(
+    state: &Arc<State>,
+    parent: &Registered,
+    reference: &str,
+    kind: ResourceKind,
+) -> Result<String> {
     let resolved = parent
         .url
         .join(reference)
         .map_err(|error| AniError::Provider(format!("invalid playlist URL: {error}")))?;
     validate_url(&resolved)?;
-    let token = register(state, resolved, parent.headers.clone())?;
+    let token = register(state, resolved, parent.headers.clone(), kind)?;
     Ok(local_url(state.base, &token))
 }
 
-fn register(state: &Arc<State>, url: Url, headers: RequestHeaders) -> Result<String> {
+fn register(
+    state: &Arc<State>,
+    url: Url,
+    headers: RequestHeaders,
+    kind: ResourceKind,
+) -> Result<String> {
     validate_url(&url)?;
-    let url_key = url.as_str().to_owned();
+    let url_key = format!("{kind:?}:{url}");
     if let Some(token) = state
         .tokens_by_url
         .lock()
@@ -298,13 +352,37 @@ fn register(state: &Arc<State>, url: Url, headers: RequestHeaders) -> Result<Str
     let count = state.counter.fetch_add(1, Ordering::Relaxed);
     let token =
         hex::encode(Sha256::digest(format!("{}:{count}:{url}", state.secret)))[..32].to_owned();
-    resources.insert(token.clone(), Registered { url, headers });
+    resources.insert(token.clone(), Registered { url, headers, kind });
     state
         .tokens_by_url
         .lock()
         .expect("relay URL registry poisoned")
         .insert(url_key, token.clone());
     Ok(token)
+}
+
+fn corrected_content_type(registered: &Registered, upstream: &str, stripped: bool) -> String {
+    if registered.kind == ResourceKind::Playlist {
+        return "application/vnd.apple.mpegurl".into();
+    }
+    if registered.kind != ResourceKind::Segment {
+        return if upstream.is_empty() {
+            "application/octet-stream".into()
+        } else {
+            upstream.into()
+        };
+    }
+    let path = registered.url.path().to_ascii_lowercase();
+    if path.ends_with(".m4s") || path.ends_with(".mp4") || path.ends_with(".m4v") {
+        "video/mp4".into()
+    } else if path.ends_with(".aac") {
+        "audio/aac".into()
+    } else if stripped || upstream.is_empty() || upstream.to_ascii_lowercase().starts_with("image/")
+    {
+        "video/mp2t".into()
+    } else {
+        upstream.into()
+    }
 }
 
 fn validate_upstream(value: &str) -> Result<Url> {
@@ -387,7 +465,7 @@ mod tests {
     use super::*;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{header, method, path},
+        matchers::{method, path},
     };
 
     #[test]
@@ -487,21 +565,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forwards_range_and_rejects_unknown_tokens() {
+    async fn suppresses_segment_ranges_and_rejects_unknown_tokens() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
+            .and(path("/master.m3u8"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("#EXTM3U\nsegment.ts\n"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
             .and(path("/segment.ts"))
-            .and(header("range", "bytes=0-2"))
-            .respond_with(
-                ResponseTemplate::new(206)
-                    .insert_header("content-range", "bytes 0-2/10")
-                    .set_body_bytes(vec![1, 2, 3]),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0x47, 1, 2]))
             .expect(1)
             .mount(&server)
             .await;
         let stream = StreamLink {
-            url: format!("{}/segment.ts", server.uri()),
+            url: format!("{}/master.m3u8", server.uri()),
             resolution: "Auto".into(),
             hls: true,
             provider: "MegaPlay".into(),
@@ -511,17 +589,31 @@ mod tests {
         };
         let (_relay, local) = relay_stream(&stream).await.unwrap();
         let client = reqwest::Client::new();
-        let ranged = client
+        let playlist = client
             .get(&local.url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        let segment_url = playlist
+            .lines()
+            .find(|line| line.starts_with("http://"))
+            .unwrap();
+        let ranged = client
+            .get(segment_url)
             .header("range", "bytes=0-2")
             .send()
             .await
             .unwrap();
-        assert_eq!(ranged.status(), reqwest::StatusCode::PARTIAL_CONTENT);
-        assert_eq!(
-            ranged.headers().get("content-range").unwrap(),
-            "bytes 0-2/10"
-        );
+        assert_eq!(ranged.status(), reqwest::StatusCode::OK);
+        let requests = server.received_requests().await.unwrap();
+        let segment_request = requests
+            .iter()
+            .find(|request| request.url.path() == "/segment.ts")
+            .unwrap();
+        assert!(!segment_request.headers.contains_key("range"));
         let base = Url::parse(&local.url).unwrap();
         let rejected = client
             .get(base.join("/r/unknown").unwrap())
@@ -552,6 +644,7 @@ mod tests {
                 &state,
                 Url::parse(&format!("https://kotocdn.site/{index}")).unwrap(),
                 RequestHeaders::default(),
+                ResourceKind::Segment,
             )
             .unwrap();
         }
@@ -559,6 +652,7 @@ mod tests {
             &state,
             Url::parse("https://kotocdn.site/overflow").unwrap(),
             RequestHeaders::default(),
+            ResourceKind::Segment,
         )
         .unwrap_err();
         assert!(error.to_string().contains("too many resources"));
