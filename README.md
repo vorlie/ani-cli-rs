@@ -24,7 +24,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 - Interactive anime/season and episode selection
 - Subbed and dubbed AllAnime or Anikoto search and playback
 - Native MegaPlay source extraction and transparent KotoCDN HLS unwrapping
-- mpv, VLC, and Syncplay support
+- mpv, IINA, VLC, and Syncplay support
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
 - Scriptable commands with JSON output
@@ -62,7 +62,9 @@ The scripts verify release archives against their published SHA-256 checksums an
 
 ## Requirements
 
-- [mpv](https://mpv.io/) for default playback, or VLC/Syncplay when selected
+- Linux and Windows: [mpv](https://mpv.io/) for default playback
+- macOS: [IINA](https://iina.io/) for default playback (`brew install --cask iina`)
+- Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 

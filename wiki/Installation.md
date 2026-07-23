@@ -86,6 +86,8 @@ cargo build --release --locked
 
 The binary is placed at `target/release/ani-cli-rs`. Copy it to a directory on your `PATH` if desired.
 
+IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`.
+
 ## Build from source on any supported desktop
 
 Install a current stable Rust toolchain, then:
