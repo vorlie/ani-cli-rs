@@ -6,6 +6,8 @@ use ani_cli::{
     StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
     provider_from_show_id,
 };
+#[cfg(debug_assertions)]
+use ani_cli::{RequestHeaders, SubtitleTrack};
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
@@ -78,6 +80,23 @@ struct Cli {
     /// Anime title to search for; omitted titles are prompted interactively.
     #[arg(value_name = "QUERY")]
     query: Vec<String>,
+    /// Use deterministic local fixtures for development recordings.
+    #[cfg(debug_assertions)]
+    #[arg(long, hide = true)]
+    demo_mode: bool,
+}
+
+impl Cli {
+    fn demo_mode(&self) -> bool {
+        #[cfg(debug_assertions)]
+        {
+            self.demo_mode
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -215,7 +234,7 @@ async fn run(cli: Cli) -> Result<()> {
         return display_next_episode_schedule(&query).await;
     }
 
-    let clients = ProviderClients::new()?;
+    let clients = ProviderClients::new(cli.demo_mode())?;
     if let Some(command) = cli.command {
         return run_command(&clients, cli.provider, command).await;
     }
@@ -444,14 +463,22 @@ fn valid_release_time(time: &str) -> bool {
     !(time.starts_with("0001-") || time.starts_with("0002-"))
 }
 
-struct ProviderClients {
-    allanime: AllAnimeClient,
-    anikoto: AnikotoClient,
+enum ProviderClients {
+    Live {
+        allanime: AllAnimeClient,
+        anikoto: AnikotoClient,
+    },
+    #[cfg(debug_assertions)]
+    Showcase,
 }
 
 impl ProviderClients {
-    fn new() -> Result<Self> {
-        Ok(Self {
+    fn new(_showcase: bool) -> Result<Self> {
+        #[cfg(debug_assertions)]
+        if _showcase {
+            return Ok(Self::Showcase);
+        }
+        Ok(Self::Live {
             allanime: AllAnimeClient::new()?,
             anikoto: AnikotoClient::new()?,
         })
@@ -464,15 +491,15 @@ impl ProviderClients {
         mode: TranslationType,
         options: SearchOptions,
     ) -> Result<Vec<SearchResult>> {
-        match provider {
-            CatalogProvider::AllAnime => {
-                self.allanime
-                    .search_with_options(query, mode, options)
-                    .await
-            }
-            CatalogProvider::Anikoto => {
-                self.anikoto.search_with_options(query, mode, options).await
-            }
+        match self {
+            Self::Live { allanime, anikoto } => match provider {
+                CatalogProvider::AllAnime => {
+                    allanime.search_with_options(query, mode, options).await
+                }
+                CatalogProvider::Anikoto => anikoto.search_with_options(query, mode, options).await,
+            },
+            #[cfg(debug_assertions)]
+            Self::Showcase => Ok(showcase_search(provider, query, options)),
         }
     }
 
@@ -482,13 +509,17 @@ impl ProviderClients {
         selected: CatalogProvider,
         mode: TranslationType,
     ) -> Result<Vec<String>> {
-        match if show_id.starts_with("anikoto:") {
-            CatalogProvider::Anikoto
-        } else {
-            selected
-        } {
-            CatalogProvider::AllAnime => self.allanime.episodes(show_id, mode).await,
-            CatalogProvider::Anikoto => self.anikoto.episodes(show_id, mode).await,
+        match self {
+            Self::Live { allanime, anikoto } => match if show_id.starts_with("anikoto:") {
+                CatalogProvider::Anikoto
+            } else {
+                selected
+            } {
+                CatalogProvider::AllAnime => allanime.episodes(show_id, mode).await,
+                CatalogProvider::Anikoto => anikoto.episodes(show_id, mode).await,
+            },
+            #[cfg(debug_assertions)]
+            Self::Showcase => Ok((1..=12).map(|episode| episode.to_string()).collect()),
         }
     }
 
@@ -499,15 +530,115 @@ impl ProviderClients {
         episode: &str,
         mode: TranslationType,
     ) -> Result<Vec<StreamLink>> {
-        match if show_id.starts_with("anikoto:") {
-            CatalogProvider::Anikoto
-        } else {
-            selected
-        } {
-            CatalogProvider::AllAnime => self.allanime.streams(show_id, episode, mode).await,
-            CatalogProvider::Anikoto => self.anikoto.streams(show_id, episode, mode).await,
+        match self {
+            Self::Live { allanime, anikoto } => match if show_id.starts_with("anikoto:") {
+                CatalogProvider::Anikoto
+            } else {
+                selected
+            } {
+                CatalogProvider::AllAnime => allanime.streams(show_id, episode, mode).await,
+                CatalogProvider::Anikoto => anikoto.streams(show_id, episode, mode).await,
+            },
+            #[cfg(debug_assertions)]
+            Self::Showcase => Ok(showcase_streams(selected, episode)),
         }
     }
+
+    async fn crypto_debug(&self, refresh: bool) -> Result<ani_cli::CryptoDebugInfo> {
+        match self {
+            Self::Live { allanime, .. } => allanime.crypto_debug(refresh).await,
+            #[cfg(debug_assertions)]
+            Self::Showcase => Ok(ani_cli::CryptoDebugInfo {
+                source: "showcase".into(),
+                epoch: 4242,
+                build_id: "demo".into(),
+                part_a: "fixture-backed".into(),
+                part_b: "no-provider-traffic".into(),
+                derived_key_hex: "00".repeat(32),
+                query_hash: "11".repeat(32),
+                api_url: "https://showcase.invalid/graphql".into(),
+                referer: "https://showcase.invalid/".into(),
+                app_js_url: None,
+                fetched_at_unix_ms: 1_785_326_400_000,
+                cache_expires_at_unix_ms: 1_785_328_200_000,
+                legacy_ctr: false,
+                error: None,
+            }),
+        }
+    }
+
+    async fn refresh_cipher_map(&self) -> Result<ani_cli::CipherMapInfo> {
+        match self {
+            Self::Live { allanime, .. } => allanime.refresh_cipher_map().await,
+            #[cfg(debug_assertions)]
+            Self::Showcase => Err(AniError::Input(
+                "cipher-map refresh is disabled in showcase mode".into(),
+            )),
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn showcase_search(
+    provider: CatalogProvider,
+    query: &str,
+    options: SearchOptions,
+) -> Vec<SearchResult> {
+    let titles = [
+        ("starfall-atelier", "Starfall Atelier", 12.0, false),
+        ("signal-bloom", "Signal Bloom", 10.0, false),
+        ("midnight-orbit", "Midnight Orbit", 24.0, false),
+        ("velvet-nebula", "Velvet Nebula", 8.0, true),
+    ];
+    let query = query.trim().to_ascii_lowercase();
+    titles
+        .into_iter()
+        .filter(|(_, title, _, adult)| {
+            (query.is_empty() || title.to_ascii_lowercase().contains(&query))
+                && (options.allow_adult || !adult)
+        })
+        .map(|(id, name, episodes, _)| SearchResult {
+            id: match provider {
+                CatalogProvider::AllAnime => format!("showcase:{id}"),
+                CatalogProvider::Anikoto => format!("anikoto:showcase-{id}"),
+            },
+            name: name.into(),
+            episodes,
+            provider,
+        })
+        .collect()
+}
+
+#[cfg(debug_assertions)]
+fn showcase_streams(provider: CatalogProvider, episode: &str) -> Vec<StreamLink> {
+    let provider_name = match provider {
+        CatalogProvider::AllAnime => "AllAnime Showcase",
+        CatalogProvider::Anikoto => "MegaPlay Showcase",
+    };
+    ["1080p", "720p", "480p"]
+        .into_iter()
+        .map(|resolution| StreamLink {
+            url: format!(
+                "https://media.showcase.invalid/starfall-atelier/episode-{episode}/{resolution}.m3u8"
+            ),
+            resolution: resolution.into(),
+            hls: true,
+            provider: provider_name.into(),
+            downloadable: true,
+            headers: RequestHeaders {
+                referer: Some("https://showcase.invalid/".into()),
+                origin: Some("https://showcase.invalid".into()),
+                ..RequestHeaders::default()
+            },
+            subtitles: vec![SubtitleTrack {
+                label: "English".into(),
+                url: format!(
+                    "https://media.showcase.invalid/starfall-atelier/episode-{episode}/en.vtt"
+                ),
+                default: true,
+            }],
+        })
+        .collect()
 }
 
 async fn run_command(
@@ -606,14 +737,14 @@ async fn run_command(
             require_allanime_diagnostic(provider)?;
             println!(
                 "{}",
-                serde_json::to_string_pretty(&clients.allanime.crypto_debug(refresh).await?)?
+                serde_json::to_string_pretty(&clients.crypto_debug(refresh).await?)?
             );
         }
         Commands::RefreshCipherMap => {
             require_allanime_diagnostic(provider)?;
             println!(
                 "{}",
-                serde_json::to_string_pretty(&clients.allanime.refresh_cipher_map().await?)?
+                serde_json::to_string_pretty(&clients.refresh_cipher_map().await?)?
             );
         }
         Commands::Update { .. } => unreachable!("update commands are handled before client setup"),

@@ -4,6 +4,8 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 
 `ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
+![Automated ani-cli-rs showcase](docs/assets/ani-cli-rs-showcase.gif)
+
 ## Quick links
 
 - [Install](#installation)
@@ -12,6 +14,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 - [CLI compatibility](#cli-compatibility)
 - [Scriptable commands](#scriptable-commands)
 - [Build and test](#build-and-test)
+- [Showcase generator](showcase/README.md)
 - [Troubleshooting](https://github.com/vorlie/ani-cli-rs/wiki/Troubleshooting)
 - [Complete documentation](https://github.com/vorlie/ani-cli-rs/wiki)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
@@ -163,6 +166,8 @@ cargo check --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+On Windows with WSL available, `.\showcase\showcase.ps1` generates the deterministic terminal MP4, screenshots, and README GIF without contacting anime providers. See the [showcase guide](showcase/README.md).
 
 Target-specific Cargo aliases and release packaging are covered in [Building and Releasing](https://github.com/vorlie/ani-cli-rs/wiki/Building-and-Releasing).
 
