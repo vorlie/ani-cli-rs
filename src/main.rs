@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 mod updater;
 
-const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime or Anikoto/MegaPlay.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. AllAnime remains the default; select Anikoto with --provider anikoto or ANI_CLI_PROVIDER=anikoto. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses mpv by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
+const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime or Anikoto/MegaPlay.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. AllAnime remains the default; select Anikoto with --provider anikoto or ANI_CLI_PROVIDER=anikoto. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS and mpv elsewhere by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
 const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
 
@@ -48,7 +48,7 @@ struct Cli {
     /// Choose best, worst, or a resolution such as 1080p or 720p.
     #[arg(short = 'q', long, env = "ANI_CLI_QUALITY", default_value = "best")]
     quality: String,
-    /// Use VLC instead of the default mpv player.
+    /// Use VLC instead of the default mpv/iina player.
     #[arg(short = 'v', long)]
     vlc: bool,
     /// Select one episode, whitespace-separated episodes, or a range such as 2-5.
@@ -570,14 +570,12 @@ async fn run_command(
                 .await?;
             let stream = choose_quality(&streams, &args.quality)
                 .ok_or_else(|| AniError::Unavailable("no streams".into()))?;
-            let options = PlayerOptions {
-                executable: args
-                    .player
-                    .unwrap_or_else(|| PlayerOptions::default_mpv().executable),
-                kind: PlayerKind::Mpv,
-                no_detach: args.no_detach,
-                exit_after_play: false,
-            };
+            let mut options = PlayerOptions::default_player();
+            if let Some(executable) = args.player {
+                options.executable = executable;
+            }
+            options.no_detach |= args.no_detach;
+            options.exit_after_play = false;
             Player::new(options)
                 .play(stream, &format!("{} Episode {}", args.title, args.episode))
                 .await?;
@@ -852,7 +850,7 @@ async fn continue_selection(
 }
 
 fn build_legacy_player(cli: &Cli) -> Player {
-    let mut options = PlayerOptions::default_mpv();
+    let mut options = PlayerOptions::default_player();
     options.no_detach |= cli.no_detach;
     options.exit_after_play |= cli.exit_after_play;
     if cli.vlc {

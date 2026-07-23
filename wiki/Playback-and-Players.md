@@ -4,7 +4,7 @@ AllAnime is the default catalog. Select native Anikoto/MegaPlay playback with `-
 
 ## mpv
 
-mpv is the default player. Install it through your operating system and ensure `mpv` (`mpv.exe` on Windows) is in `PATH`.
+mpv is the default player on Linux and Windows. Install it through your operating system and ensure `mpv` (`mpv.exe` on Windows) is in `PATH`.
 
 ```console
 ani-cli-rs "title"
@@ -22,6 +22,12 @@ ani-cli-rs "title"
 ```sh
 ANI_CLI_PLAYER=/opt/mpv/bin/mpv ani-cli-rs "title"
 ```
+
+## IINA on macOS
+
+IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`. ani-cli-rs passes provider headers and subtitles through IINA's mpv-compatible options.
+
+`ANI_CLI_PLAYER` overrides the platform's default executable, so it must point to an IINA-compatible command on macOS or an mpv-compatible command on Linux and Windows.
 
 ## VLC
 
