@@ -2,10 +2,12 @@ use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
     AllAnimeClient, AniError, AnikotoClient, CatalogProvider, DownloadOptions, HistoryEntry,
-    HistoryStore, Player, PlayerKind, PlayerOptions, RequestHeaders, Result, SearchOptions,
-    SearchResult, StreamLink, SubtitleTrack, TranslationType, choose_quality, download_stream,
-    expand_episode_selection, provider_from_show_id,
+    HistoryStore, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
+    StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
+    provider_from_show_id,
 };
+#[cfg(debug_assertions)]
+use ani_cli::{RequestHeaders, SubtitleTrack};
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
@@ -471,9 +473,9 @@ enum ProviderClients {
 }
 
 impl ProviderClients {
-    fn new(showcase: bool) -> Result<Self> {
+    fn new(_showcase: bool) -> Result<Self> {
         #[cfg(debug_assertions)]
-        if showcase {
+        if _showcase {
             return Ok(Self::Showcase);
         }
         Ok(Self::Live {
