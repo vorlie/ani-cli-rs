@@ -428,10 +428,10 @@ impl AnikotoClient {
 }
 
 pub fn provider_from_show_id(show_id: &str) -> CatalogProvider {
-    if show_id.starts_with("anikoto:") {
-        CatalogProvider::Anikoto
+    if show_id.starts_with("anikoto2:") {
+        CatalogProvider::Anikoto2
     } else {
-        CatalogProvider::AllAnime
+        CatalogProvider::Anikoto
     }
 }
 
@@ -906,7 +906,11 @@ mod tests {
         let encoded = encode_id(&value).unwrap();
         assert_eq!(decode_id(&encoded).unwrap(), value);
         assert_eq!(provider_from_show_id(&encoded), CatalogProvider::Anikoto);
-        assert_eq!(provider_from_show_id("legacy"), CatalogProvider::AllAnime);
+        assert_eq!(
+            provider_from_show_id("anikoto2:metadata"),
+            CatalogProvider::Anikoto2
+        );
+        assert_eq!(provider_from_show_id("legacy"), CatalogProvider::Anikoto);
     }
 
     #[test]

@@ -8,16 +8,6 @@ pub type Result<T> = std::result::Result<T, AniError>;
 pub enum AniError {
     #[error("network request failed: {0}")]
     Network(String),
-    #[error("AllAnime GraphQL error: {0}")]
-    GraphQl(String),
-    #[error(
-        "AllAnime rate limit persisted after retries; try again in {retry_after_seconds} seconds"
-    )]
-    RateLimited { retry_after_seconds: u64 },
-    #[error("AllAnime bootstrap failed: {0}")]
-    Bootstrap(String),
-    #[error("AllAnime payload decryption failed: {0}")]
-    Decryption(String),
     #[error("malformed provider data: {0}")]
     Provider(String),
     #[error("{provider} catalog error: {message}")]

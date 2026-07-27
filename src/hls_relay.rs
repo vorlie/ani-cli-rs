@@ -208,8 +208,13 @@ async fn handle_inner(
         .unwrap_or("")
         .to_owned();
     if request.method() == Method::HEAD {
-        let mut result = response(status, &content_type, Vec::new());
-        copy_upstream_headers(&upstream_headers, result.headers_mut(), true);
+        let corrected_type = corrected_content_type(&registered, &content_type, false);
+        let mut result = response(status, &corrected_type, Vec::new());
+        copy_upstream_headers(
+            &upstream_headers,
+            result.headers_mut(),
+            registered.kind != ResourceKind::Segment,
+        );
         return Ok(result);
     }
     let bytes = upstream.bytes().await?.to_vec();
@@ -522,6 +527,15 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_bytes(wrapped))
             .mount(&server)
             .await;
+        Mock::given(method("HEAD"))
+            .and(path("/segment.png"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "image/png")
+                    .insert_header("content-length", "999"),
+            )
+            .mount(&server)
+            .await;
 
         let stream = StreamLink {
             url: format!("{}/master.m3u8", server.uri()),
@@ -558,6 +572,11 @@ mod tests {
             .lines()
             .find(|line| !line.is_empty() && !line.starts_with('#'))
             .unwrap();
+        let segment_head = client.head(segment_url).send().await.unwrap();
+        assert_eq!(
+            segment_head.headers().get("content-type").unwrap(),
+            "video/mp2t"
+        );
         let segment = client.get(segment_url).send().await.unwrap();
         assert_eq!(segment.headers().get("content-type").unwrap(), "video/mp2t");
         assert_eq!(segment.bytes().await.unwrap()[0], 0x47);

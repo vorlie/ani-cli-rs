@@ -3,7 +3,7 @@ name = "ani-cli-rs"
 version = "0.7.2"
 edition = "2024"
 license = "GPL-3.0-only"
-description = "Cross-platform Rust port of ani-cli with AllAnime and Anikoto providers"
+description = "Cross-platform Rust port of ani-cli with Anikoto providers"
 
 [lib]
 name = "ani_cli"
@@ -14,12 +14,9 @@ name = "ani-cli-rs"
 path = "src/main.rs"
 
 [dependencies]
-aes = "0.8"
-aes-gcm = "0.10"
 base64 = "0.22"
 bytes = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
-ctr = "0.9"
 dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 directories = "6"
 futures-util = "0.3"
@@ -28,7 +25,7 @@ hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 hex = "0.4"
 regex = "1.11"
-p256 = { version = "0.13", features = ["ecdsa"] }
+scraper = "0.24"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

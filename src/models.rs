@@ -8,15 +8,15 @@ use crate::{AniError, Result};
 #[serde(rename_all = "lowercase")]
 pub enum CatalogProvider {
     #[default]
-    AllAnime,
     Anikoto,
+    Anikoto2,
 }
 
 impl fmt::Display for CatalogProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::AllAnime => "allanime",
             Self::Anikoto => "anikoto",
+            Self::Anikoto2 => "anikoto2",
         })
     }
 }
@@ -26,10 +26,10 @@ impl FromStr for CatalogProvider {
 
     fn from_str(value: &str) -> Result<Self> {
         match value.to_ascii_lowercase().as_str() {
-            "allanime" | "all-anime" => Ok(Self::AllAnime),
-            "anikoto" => Ok(Self::Anikoto),
+            "anikoto" | "anikoto1" | "anikoto-api" => Ok(Self::Anikoto),
+            "anikoto2" | "anikoto-cz" | "anikoto.cz" => Ok(Self::Anikoto2),
             _ => Err(AniError::Input(format!(
-                "provider must be allanime or anikoto, got {value}"
+                "provider must be anikoto or anikoto2, got {value}"
             ))),
         }
     }
@@ -107,24 +107,6 @@ pub struct StreamLink {
     pub headers: RequestHeaders,
     #[serde(default)]
     pub subtitles: Vec<SubtitleTrack>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct CryptoDebugInfo {
-    pub source: String,
-    pub epoch: u64,
-    pub build_id: String,
-    pub part_a: String,
-    pub part_b: String,
-    pub derived_key_hex: String,
-    pub query_hash: String,
-    pub api_url: String,
-    pub referer: String,
-    pub app_js_url: Option<String>,
-    pub fetched_at_unix_ms: u64,
-    pub cache_expires_at_unix_ms: u64,
-    pub legacy_ctr: bool,
-    pub error: Option<String>,
 }
 
 fn resolution_weight(value: &str) -> i32 {

@@ -11,7 +11,7 @@ fn help_lists_legacy_and_scriptable_interfaces() {
         .stdout(predicate::str::contains("--continue"))
         .stdout(predicate::str::contains("--allow-adult"))
         .stdout(predicate::str::contains("--update"))
-        .stdout(predicate::str::contains("refresh-cipher-map"));
+        .stdout(predicate::str::contains("anikoto2"));
 }
 
 #[test]
@@ -48,17 +48,19 @@ fn help_documents_provider_selection() {
 }
 
 #[test]
-fn allanime_only_diagnostics_reject_anikoto() {
+fn removed_allanime_provider_is_rejected() {
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
-        .args(["--provider", "anikoto", "debug"])
+        .args(["--provider", "allanime", "search", "example"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("AllAnime-only"));
+        .stderr(predicate::str::contains(
+            "provider must be anikoto or anikoto2",
+        ));
 }
 
 #[test]
-fn numeric_anikoto_ids_require_explicit_provider() {
+fn invalid_default_anikoto_ids_fail_before_network() {
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
         .args(["--provider", "anikoto", "episodes", "not-a-valid-id"])
@@ -71,11 +73,11 @@ fn numeric_anikoto_ids_require_explicit_provider() {
 fn environment_can_select_anikoto() {
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
-        .env("ANI_CLI_PROVIDER", "anikoto")
-        .arg("debug")
+        .env("ANI_CLI_PROVIDER", "anikoto2")
+        .args(["episodes", "not a slug"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("AllAnime-only"));
+        .stderr(predicate::str::contains("invalid Anikoto.cz show ID"));
 }
 
 #[test]
@@ -86,23 +88,24 @@ fn prefixed_ids_auto_route_to_anikoto() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("invalid Anikoto show ID"));
+
+    Command::cargo_bin("ani-cli-rs")
+        .unwrap()
+        .args(["episodes", "anikoto2:not-base64"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid Anikoto.cz show ID"));
 }
 
 #[test]
 fn showcase_search_is_fixture_backed_and_hidden_from_help() {
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
-        .args([
-            "--demo-mode",
-            "--provider",
-            "allanime",
-            "search",
-            "starfall",
-        ])
+        .args(["--demo-mode", "--provider", "anikoto", "search", "starfall"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "showcase:starfall-atelier\tStarfall Atelier (12 episodes)",
+            "anikoto:showcase-starfall-atelier\tStarfall Atelier (12 episodes)",
         ));
 
     Command::cargo_bin("ani-cli-rs")

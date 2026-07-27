@@ -1,7 +1,7 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_cli::{
-    AllAnimeClient, AniError, AnikotoClient, CatalogProvider, DownloadOptions, HistoryEntry,
+    AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, HistoryEntry,
     HistoryStore, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
     StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
     provider_from_show_id,
@@ -14,22 +14,22 @@ use serde::{Deserialize, Serialize};
 
 mod updater;
 
-const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from AllAnime or Anikoto/MegaPlay.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. AllAnime remains the default; select Anikoto with --provider anikoto or ANI_CLI_PROVIDER=anikoto. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper performs HTTP and cryptography internally; curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS and mpv elsewhere by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
+const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS and mpv elsewhere by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto frieren\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n  ani-cli-rs debug --refresh\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
 
 #[derive(Parser, Debug)]
 #[command(
     name = "ani-cli-rs",
     version,
-    about = "Browse, play, and download anime from AllAnime or Anikoto",
+    about = "Browse, play, and download anime from Anikoto providers",
     long_about = LONG_ABOUT,
     after_help = AFTER_HELP
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Catalog provider. Prefixed Anikoto IDs route automatically.
+    /// Catalog provider: anikoto (default) or anikoto2 (Anikoto.cz).
     #[arg(short = 'p', long, global = true, env = "ANI_CLI_PROVIDER")]
     provider: Option<CatalogProvider>,
     /// Continue from the next unwatched episode in the ani-cli history.
@@ -111,14 +111,6 @@ enum Commands {
     Play(ActionArgs),
     /// Resolve and download one episode.
     Download(ActionArgs),
-    /// Display the active AllAnime crypto/bootstrap diagnostics.
-    Debug {
-        /// Discard cached crypto material and fetch the bootstrap again.
-        #[arg(long)]
-        refresh: bool,
-    },
-    /// Download, validate, and cache the latest upstream URL cipher map.
-    RefreshCipherMap,
     /// Check for or install the latest ani-cli-rs release.
     Update {
         /// Only report whether an update is available.
@@ -465,8 +457,8 @@ fn valid_release_time(time: &str) -> bool {
 
 enum ProviderClients {
     Live {
-        allanime: AllAnimeClient,
         anikoto: AnikotoClient,
+        anikoto2: AnikotoCzClient,
     },
     #[cfg(debug_assertions)]
     Showcase,
@@ -479,8 +471,8 @@ impl ProviderClients {
             return Ok(Self::Showcase);
         }
         Ok(Self::Live {
-            allanime: AllAnimeClient::new()?,
             anikoto: AnikotoClient::new()?,
+            anikoto2: AnikotoCzClient::new()?,
         })
     }
 
@@ -492,11 +484,11 @@ impl ProviderClients {
         options: SearchOptions,
     ) -> Result<Vec<SearchResult>> {
         match self {
-            Self::Live { allanime, anikoto } => match provider {
-                CatalogProvider::AllAnime => {
-                    allanime.search_with_options(query, mode, options).await
-                }
+            Self::Live { anikoto, anikoto2 } => match provider {
                 CatalogProvider::Anikoto => anikoto.search_with_options(query, mode, options).await,
+                CatalogProvider::Anikoto2 => {
+                    anikoto2.search_with_options(query, mode, options).await
+                }
             },
             #[cfg(debug_assertions)]
             Self::Showcase => Ok(showcase_search(provider, query, options)),
@@ -510,13 +502,9 @@ impl ProviderClients {
         mode: TranslationType,
     ) -> Result<Vec<String>> {
         match self {
-            Self::Live { allanime, anikoto } => match if show_id.starts_with("anikoto:") {
-                CatalogProvider::Anikoto
-            } else {
-                selected
-            } {
-                CatalogProvider::AllAnime => allanime.episodes(show_id, mode).await,
+            Self::Live { anikoto, anikoto2 } => match routed_provider(show_id, selected) {
                 CatalogProvider::Anikoto => anikoto.episodes(show_id, mode).await,
+                CatalogProvider::Anikoto2 => anikoto2.episodes(show_id, mode).await,
             },
             #[cfg(debug_assertions)]
             Self::Showcase => Ok((1..=12).map(|episode| episode.to_string()).collect()),
@@ -531,50 +519,21 @@ impl ProviderClients {
         mode: TranslationType,
     ) -> Result<Vec<StreamLink>> {
         match self {
-            Self::Live { allanime, anikoto } => match if show_id.starts_with("anikoto:") {
-                CatalogProvider::Anikoto
-            } else {
-                selected
-            } {
-                CatalogProvider::AllAnime => allanime.streams(show_id, episode, mode).await,
+            Self::Live { anikoto, anikoto2 } => match routed_provider(show_id, selected) {
                 CatalogProvider::Anikoto => anikoto.streams(show_id, episode, mode).await,
+                CatalogProvider::Anikoto2 => anikoto2.streams(show_id, episode, mode).await,
             },
             #[cfg(debug_assertions)]
             Self::Showcase => Ok(showcase_streams(selected, episode)),
         }
     }
+}
 
-    async fn crypto_debug(&self, refresh: bool) -> Result<ani_cli::CryptoDebugInfo> {
-        match self {
-            Self::Live { allanime, .. } => allanime.crypto_debug(refresh).await,
-            #[cfg(debug_assertions)]
-            Self::Showcase => Ok(ani_cli::CryptoDebugInfo {
-                source: "showcase".into(),
-                epoch: 4242,
-                build_id: "demo".into(),
-                part_a: "fixture-backed".into(),
-                part_b: "no-provider-traffic".into(),
-                derived_key_hex: "00".repeat(32),
-                query_hash: "11".repeat(32),
-                api_url: "https://showcase.invalid/graphql".into(),
-                referer: "https://showcase.invalid/".into(),
-                app_js_url: None,
-                fetched_at_unix_ms: 1_785_326_400_000,
-                cache_expires_at_unix_ms: 1_785_328_200_000,
-                legacy_ctr: false,
-                error: None,
-            }),
-        }
-    }
-
-    async fn refresh_cipher_map(&self) -> Result<ani_cli::CipherMapInfo> {
-        match self {
-            Self::Live { allanime, .. } => allanime.refresh_cipher_map().await,
-            #[cfg(debug_assertions)]
-            Self::Showcase => Err(AniError::Input(
-                "cipher-map refresh is disabled in showcase mode".into(),
-            )),
-        }
+fn routed_provider(show_id: &str, selected: CatalogProvider) -> CatalogProvider {
+    if show_id.starts_with("anikoto:") || show_id.starts_with("anikoto2:") {
+        provider_from_show_id(show_id)
+    } else {
+        selected
     }
 }
 
@@ -599,8 +558,8 @@ fn showcase_search(
         })
         .map(|(id, name, episodes, _)| SearchResult {
             id: match provider {
-                CatalogProvider::AllAnime => format!("showcase:{id}"),
                 CatalogProvider::Anikoto => format!("anikoto:showcase-{id}"),
+                CatalogProvider::Anikoto2 => format!("anikoto2:showcase-{id}"),
             },
             name: name.into(),
             episodes,
@@ -612,8 +571,8 @@ fn showcase_search(
 #[cfg(debug_assertions)]
 fn showcase_streams(provider: CatalogProvider, episode: &str) -> Vec<StreamLink> {
     let provider_name = match provider {
-        CatalogProvider::AllAnime => "AllAnime Showcase",
         CatalogProvider::Anikoto => "MegaPlay Showcase",
+        CatalogProvider::Anikoto2 => "Anikoto.cz Showcase",
     };
     ["1080p", "720p", "480p"]
         .into_iter()
@@ -731,30 +690,7 @@ async fn run_command(
                 download_stream(stream, &options).await?.display()
             );
         }
-        Commands::Debug { refresh } => {
-            require_allanime_diagnostic(provider)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&clients.crypto_debug(refresh).await?)?
-            );
-        }
-        Commands::RefreshCipherMap => {
-            require_allanime_diagnostic(provider)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&clients.refresh_cipher_map().await?)?
-            );
-        }
         Commands::Update { .. } => unreachable!("update commands are handled before client setup"),
-    }
-    Ok(())
-}
-
-fn require_allanime_diagnostic(provider: CatalogProvider) -> Result<()> {
-    if provider == CatalogProvider::Anikoto {
-        return Err(AniError::Input(
-            "debug and refresh-cipher-map are AllAnime-only commands".into(),
-        ));
     }
     Ok(())
 }
