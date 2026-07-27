@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve ani-cli-rs. For AllAnime source or playback failures, use the provider-breakage form instead.
+        Thanks for helping improve ani-cli-rs. For catalog, source, or playback failures, use the provider-breakage form instead.
 
   - type: input
     id: version

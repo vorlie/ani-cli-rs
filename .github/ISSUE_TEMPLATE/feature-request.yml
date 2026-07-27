@@ -27,7 +27,7 @@ body:
       options:
         - Bash ani-cli compatibility
         - Interactive terminal UX
-        - AllAnime scraper
+        - Provider scraper
         - Playback or downloads
         - Library API
         - Installation or packaging
@@ -52,4 +52,3 @@ body:
           required: true
         - label: This request does not require bundling proprietary software or credentials.
           required: true
-

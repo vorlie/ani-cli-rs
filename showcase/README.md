@@ -1,6 +1,6 @@
 # ani-cli-rs showcase generator
 
-This directory records a deterministic ani-cli-rs terminal walkthrough with [VHS](https://github.com/charmbracelet/vhs). The tape exercises the real `search`, `episodes`, `links`, quality-selection, JSON, subtitle metadata, and diagnostics command paths against local Rust fixtures.
+This directory records a deterministic ani-cli-rs terminal walkthrough with [VHS](https://github.com/charmbracelet/vhs). The tape exercises the real `search`, `episodes`, `links`, provider routing, quality-selection, JSON, subtitle metadata, and help paths against local Rust fixtures.
 
 ## Generate the showcase
 
@@ -30,9 +30,9 @@ The tools, MP4, screenshots, and intermediate output are ignored by Git. Only th
 
 The hidden `--demo-mode` flag exists only in debug builds. Release builds do not compile the flag or fixture backend.
 
-When enabled, provider clients are not constructed. Search results, episodes, stream URLs, request headers, subtitles, and crypto diagnostics come from fixed in-process values. The placeholder `.invalid` URLs are printed for demonstration and are never fetched by the tape. Playback, downloads, updates, history, and external programs are not invoked.
+When enabled, provider clients are not constructed. Search results, episodes, stream URLs, request headers, and subtitles come from fixed in-process values. The placeholder `.invalid` URLs are printed for demonstration and are never fetched by the tape. Playback, downloads, updates, history, and external programs are not invoked.
 
-The recorder's first-run downloads are development tooling traffic. The running CLI does not contact AllAnime, Anikoto, MegaPlay, AniList, GitHub APIs, or media hosts.
+The recorder's first-run downloads are development tooling traffic. The running CLI does not contact Anikoto API, Anikoto.cz, MegaPlay, AniList, GitHub APIs, or media hosts.
 
 ## Editing the tape
 

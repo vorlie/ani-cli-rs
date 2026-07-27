@@ -19,7 +19,7 @@ Set Theme { "name": "AniPlay", "black": "#17131e", "red": "#ff5b3d", "green": "#
 
 Env NO_COLOR "1"
 Env RUST_LOG "off"
-Env ANI_CLI_PROVIDER "allanime"
+Env ANI_CLI_PROVIDER "anikoto"
 
 Ctrl+L
 
@@ -29,7 +29,7 @@ Enter
 Wait+Screen@10s /ani-cli-rs/
 Sleep 3s
 
-Type "./target/debug/ani-cli-rs --demo-mode --provider allanime search starfall"
+Type "./target/debug/ani-cli-rs --demo-mode --provider anikoto search starfall"
 Sleep 500ms
 Enter
 Wait+Screen@10s /Starfall Atelier/
@@ -37,7 +37,7 @@ Sleep 5s
 Screenshot showcase/output/screenshots/01-search.png
 
 Ctrl+L
-Type "./target/debug/ani-cli-rs --demo-mode --provider anikoto search signal --json"
+Type "./target/debug/ani-cli-rs --demo-mode --provider anikoto2 search signal --json"
 Sleep 500ms
 Enter
 Wait+Screen@10s /Signal Bloom/
@@ -45,7 +45,7 @@ Sleep 6s
 Screenshot showcase/output/screenshots/02-provider-json.png
 
 Ctrl+L
-Type "./target/debug/ani-cli-rs --demo-mode episodes showcase:starfall-atelier --json"
+Type "./target/debug/ani-cli-rs --demo-mode episodes anikoto:showcase-starfall-atelier --json"
 Sleep 500ms
 Enter
 Wait+Screen@10s /\"12\"/
@@ -53,7 +53,7 @@ Sleep 5s
 Screenshot showcase/output/screenshots/03-episodes.png
 
 Ctrl+L
-Type "./target/debug/ani-cli-rs --demo-mode --provider anikoto links anikoto:showcase-starfall-atelier 1 --quality 720p --json"
+Type "./target/debug/ani-cli-rs --demo-mode --provider anikoto2 links anikoto2:showcase-starfall-atelier 1 --quality 720p --json"
 Sleep 500ms
 Enter
 Wait+Screen@10s /\"resolution\": \"720p\"/
@@ -61,20 +61,20 @@ Sleep 7s
 Screenshot showcase/output/screenshots/04-streams.png
 
 Ctrl+L
-Type "./target/debug/ani-cli-rs --demo-mode --provider allanime debug"
+Type "./target/debug/ani-cli-rs --help"
 Sleep 500ms
 Enter
-Wait+Screen@10s /\"source\": \"showcase\"/
+Wait+Screen@10s /anikoto2/
 Sleep 7s
-Screenshot showcase/output/screenshots/05-diagnostics.png
+Screenshot showcase/output/screenshots/05-help.png
 
 Ctrl+L
 Type "echo 'Search. Resolve. Play. Download.'"
 Sleep 500ms
 Enter
 Wait+Screen@10s /Search. Resolve/
-Type "echo 'AllAnime + Anikoto, from one native CLI.'"
+Type "echo 'Anikoto API + Anikoto.cz, from one native Rust CLI.'"
 Sleep 400ms
 Enter
-Wait+Screen@10s /one native CLI/
+Wait+Screen@10s /native Rust CLI/
 Sleep 9s
