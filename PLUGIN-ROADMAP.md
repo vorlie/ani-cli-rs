@@ -25,7 +25,7 @@ External processes are preferred over in-process Rust dynamic libraries. They av
 - Executing plugin-provided UI code inside the terminal application.
 - Perfect operating-system sandboxing on every platform.
 - Allowing plugins to mutate ani-cli-rs history or configuration directly.
-- Replacing the built-in AllAnime implementation with a plugin immediately.
+- Replacing both built-in Anikoto implementations with plugins immediately.
 
 ## Proposed layout
 
@@ -221,7 +221,7 @@ Proposed environment variables:
 - `ANI_CLI_PLUGIN_DIR`: additional or portable plugin directory.
 - `ANI_CLI_PLUGIN_TIMEOUT`: diagnostic timeout override with a documented upper bound.
 
-The built-in provider should have a stable ID such as `allanime`. History entries need a provider field or a backward-compatible extension before multiple providers can safely share similarly shaped IDs. Legacy history lines without a provider continue to mean the built-in AllAnime provider.
+Built-in providers use stable IDs (`anikoto` and `anikoto2`). Provider-prefixed show IDs keep history entries self-routing without changing the legacy tab-separated file layout.
 
 Interactive provider selection should appear only when more than one enabled provider is available. Existing users with no plugins installed should see no additional prompt.
 
@@ -253,7 +253,7 @@ Future hardening may include:
 
 ## Library architecture
 
-Introduce an internal asynchronous provider abstraction implemented by both AllAnime and external plugins:
+Introduce an internal asynchronous provider abstraction implemented by built-in providers and external plugins:
 
 ```rust
 trait Provider {
@@ -328,7 +328,7 @@ Exit criteria: the host can safely exercise a deterministic echo/reference plugi
 ### Phase 3: provider integration
 
 - Introduce the shared provider abstraction.
-- Wrap the existing AllAnime client as the built-in provider.
+- Wrap both existing Anikoto clients as built-in providers.
 - Implement external search, episodes, and streams methods.
 - Add `--provider` and `ANI_CLI_PROVIDER`.
 - Reuse existing quality selection, playback, downloads, and headers for plugin streams.

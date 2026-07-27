@@ -22,7 +22,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Normal tests are deterministic and must not require live AllAnime. Use fixtures and Wiremock for network behavior. Live smoke checks are manual because provider URLs and crypto rotate.
+Normal tests are deterministic and must not require live providers. Use fixtures and Wiremock for network behavior. Live smoke checks remain opt-in because provider responses and media URLs rotate.
 
 ## Release builds and target directories
 

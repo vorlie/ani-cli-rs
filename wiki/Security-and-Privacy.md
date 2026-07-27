@@ -6,9 +6,9 @@ Official Windows binaries are currently unsigned. Microsoft SmartScreen and heur
 
 Older VirusTotal behavior reports have described parts of ani-cli-rs as obfuscated. Expected implementation behaviors that can contribute to heuristic classifications include:
 
-- AES-GCM, AES-CTR, P-256, XOR, SHA-256, and Base64 operations used by AllAnime and providers;
-- downloading and scanning Mkissa frontend JavaScript for rotating crypto material;
+- decoding provider-prefixed Base64URL metadata and parsing provider HTML/JSON;
 - resolving temporary media URLs;
+- binding a temporary loopback-only HLS compatibility relay;
 - launching mpv, VLC, Syncplay, aria2c, yt-dlp, or FFmpeg;
 - an installer modifying the current user's `PATH`.
 
@@ -53,9 +53,8 @@ Reproducible byte-for-byte output is not promised across compiler versions, link
 
 Depending on the command, ani-cli-rs contacts:
 
-- Mkissa/AllAnime bootstrap and GraphQL endpoints;
+- Anikoto API, AniList, Anikoto.cz, and its optional mapper endpoint;
 - third-party media/provider hosts returned for the selected episode;
-- upstream Bash ani-cli when explicitly refreshing the cipher map;
 - AnimeSchedule for `--nextep-countdown`;
 - GitHub Releases for update checks and installation.
 

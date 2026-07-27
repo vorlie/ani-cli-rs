@@ -32,11 +32,11 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Normal tests must remain deterministic and must not require live provider access. Use fixtures or the mock HTTP server for scraper changes. AllAnime smoke tests use their existing opt-in switch; Anikoto/MegaPlay smoke tests must require `ANI_CLI_LIVE_ANIKOTO=1`.
+Normal tests must remain deterministic and must not require live provider access. Use fixtures or the mock HTTP server for scraper changes. Anikoto API/MegaPlay smoke tests require `ANI_CLI_LIVE_ANIKOTO=1`; Anikoto.cz smoke tests require `ANI_CLI_LIVE_ANIKOTO2=1`.
 
 ## Scraper changes
 
-Read [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md) before changing AllAnime request/crypto resolution, or [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) before changing the Anikoto, MegaPlay, or relay pipeline.
+Read [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) before changing the Anikoto API/MegaPlay workflow, or [`docs/ANIKOTO-CZ.md`](docs/ANIKOTO-CZ.md) before changing the Anikoto.cz AJAX and server workflow.
 
 - Include sanitized fixtures for new response shapes and encryption paths.
 - Test partial provider failures instead of assuming every extracted source works.

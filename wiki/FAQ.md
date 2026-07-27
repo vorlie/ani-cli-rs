@@ -20,11 +20,11 @@ for interactive title/season/episode selection.
 
 ## Where do I find a show ID?
 
-Run `ani-cli-rs search --json "title"`, or copy the segment following `/anime/` in a Mkissa URL.
+Run `ani-cli-rs search --json "title"` and use the returned provider-prefixed ID.
 
 ## Why is a season shown as another anime result?
 
-AllAnime commonly models seasons as separate show entries rather than one show containing a season list. Select the appropriately named result.
+Both catalogs commonly model seasons as separate show entries rather than one show containing a season list. Select the appropriately named result.
 
 ## Why does a download use `.part`?
 
@@ -52,19 +52,15 @@ No. Linux ARM64 can be built from source, and a Cargo alias exists for contribut
 
 ## Why does antivirus flag the Windows executable?
 
-It is currently unsigned and performs cryptography, dynamic frontend inspection, downloads, and child-process launching. Those behaviors can trigger heuristics. Verify checksums, inspect the source, or build locally. A detection should still be evaluated rather than automatically dismissed.
+It is currently unsigned and performs provider requests, local HLS relay traffic, downloads, and child-process launching. Those behaviors can trigger heuristics. Verify checksums, inspect the source, or build locally. A detection should still be evaluated rather than automatically dismissed.
 
 ## Why does one anime work while another fails?
 
 Each episode can use different third-party hosts. Some copies are deleted, blocked, expired, or protected by changed provider protocols. ani-cli-rs cannot produce a stream when every upstream source is unavailable.
 
-## What are `AA_CRYPTO_STALE` and `AA_CRYPTO_CROSS_KEY`?
-
-They indicate disagreement between the rotating frontend crypto material and the episode API. Retry after a short delay, use `debug --refresh`, and update to the latest release if the issue persists.
-
 ## Does `--allow-adult` bypass router filtering?
 
-No. It only changes the AllAnime search variable. DNS, FortiGuard, parental controls, antivirus, or ISP filtering still applies.
+No. It only changes catalog filtering where the selected provider supplies adult metadata. DNS, FortiGuard, parental controls, antivirus, or ISP filtering still applies.
 
 ## Does ani-cli-rs require administrator/root access?
 

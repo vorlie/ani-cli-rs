@@ -8,7 +8,7 @@ ani-cli-rs "frieren"
 
 The normal flow is:
 
-1. search AllAnime;
+1. search the selected Anikoto catalog;
 2. choose the correct anime entry or season;
 3. choose an episode;
 4. resolve supported sources and requested quality;
@@ -48,7 +48,7 @@ ani-cli-rs -e 2-5 "title"
 ani-cli-rs -e "1 3 5.5" "title"
 ```
 
-`-r/--range` is an alias of `-e/--episode`. Fractional episode labels are supported when AllAnime publishes them.
+`-r/--range` is an alias of `-e/--episode`. Fractional episode labels are preserved when the selected catalog publishes them.
 
 ## Multiple interactive episodes
 

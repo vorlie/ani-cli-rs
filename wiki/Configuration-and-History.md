@@ -94,9 +94,9 @@ ani-cli-rs --delete
 
 `--continue` lists entries that have a published next episode. `--delete` rewrites the history as empty; it does not delete downloaded media.
 
-## Scraper state
+## Provider cache
 
-Crypto bootstrap material and the validated URL cipher map use a separate platform-native `ani-cli-rs` state directory. Dynamic crypto material is cached for a limited time because upstream values rotate. `debug --refresh` bypasses the normal cached bootstrap lookup.
+Successful catalog and series responses are cached in memory for five minutes. The cache is process-local and contains no media files or persistent provider credentials.
 
 ## Logging
 

@@ -1,6 +1,6 @@
 # Playback and Players
 
-AllAnime is the default catalog. Select native Anikoto/MegaPlay playback with `--provider anikoto` or `ANI_CLI_PROVIDER=anikoto`. For MegaPlay-associated HLS, ani-cli-rs starts a loopback-only relay and remains attached to the player until it exits; this is required to translate KotoCDN's confirmed PNG-wrapped transport-stream segments. Normal AllAnime detach behavior is unchanged.
+Anikoto API/MegaPlay is the default catalog. Select the independent Anikoto.cz catalog with `--provider anikoto2` or `ANI_CLI_PROVIDER=anikoto2`. For KotoCDN HLS from either provider, ani-cli-rs starts a loopback-only relay and remains attached to the player until it exits; this translates confirmed PNG-wrapped transport-stream segments.
 
 ## mpv
 
@@ -45,7 +45,7 @@ ani-cli-rs --syncplay "title"
 
 The executable defaults to `syncplay.exe` on Windows and `syncplay` elsewhere. ani-cli-rs supplies the stream and mpv-compatible referrer/title options to Syncplay.
 
-Syncplay coordinates playback state; it does not make an unavailable AllAnime source available.
+Syncplay coordinates playback state; it does not make an unavailable provider source available.
 
 ## Attached and detached playback
 

@@ -33,7 +33,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Do not make normal tests depend on live AllAnime. Use fixtures or Wiremock.
+Do not make normal tests depend on live providers. Use fixtures or Wiremock.
 
 ## Good commit boundaries
 
@@ -50,7 +50,7 @@ Avoid mixing formatting, unrelated cleanup, generated artifacts, and the actual 
 
 ## Scraper changes
 
-Read [Architecture and AllAnime Scraping](Architecture-and-AllAnime-Scraping) and the repository scraper document first.
+Read [Provider Architecture](Provider-Architecture) and the relevant source-adjacent provider document first.
 
 - Include sanitized response fixtures.
 - Preserve partial-provider success.

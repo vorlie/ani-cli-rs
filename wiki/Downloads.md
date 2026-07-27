@@ -1,6 +1,6 @@
 # Downloads
 
-Anikoto downloads use the same preflight and downloader fallback order as AllAnime. Select the catalog with `--provider anikoto`; self-identifying `anikoto:` IDs returned by search route automatically. MegaPlay/KotoCDN HLS is passed through ani-cli-rs's tokenized loopback relay for the lifetime of yt-dlp/FFmpeg so wrapped transport-stream fragments can be consumed without transcoding.
+Both Anikoto providers use the same preflight and downloader fallback order. Select Anikoto.cz with `--provider anikoto2`; self-identifying `anikoto:` and `anikoto2:` IDs route automatically. MegaPlay/KotoCDN HLS is passed through ani-cli-rs's tokenized loopback relay for the lifetime of yt-dlp/FFmpeg so wrapped transport-stream fragments can be consumed without transcoding.
 
 ## Interactive download by anime name
 
@@ -8,7 +8,7 @@ Anikoto downloads use the same preflight and downloader fallback order as AllAni
 ani-cli-rs --download "anime title"
 ```
 
-AllAnime generally exposes seasons as separate search results. Select the intended anime/season entry, then one or more episodes.
+Catalogs generally expose seasons as separate search results. Select the intended anime/season entry, then one or more episodes.
 
 From version 0.6.0, ani-cli-rs preflights the complete selection before starting a transfer:
 
@@ -28,7 +28,7 @@ Preflight means provider resolution, not an extra HTTP `HEAD` request. Some host
 ani-cli-rs download SHOW_ID 1 --title "Anime title" --output ./Downloads
 ```
 
-This subcommand does not search by name and does not open selectors. Obtain the ID with `search --json` or from a Mkissa `/anime/SHOW_ID` URL.
+This subcommand does not search by name and does not open selectors. Obtain the provider-prefixed ID with `search --json`.
 
 ## Quality selection
 
@@ -87,7 +87,7 @@ Language tags allow players such as VLC to display `English`, `Polish`, or anoth
 
 If FFmpeg is unavailable or subtitle muxing fails, the completed video is preserved and downloaded subtitles remain beside it as sidecar files. The CLI reports this fallback. Installing FFmpeg and ensuring `ffmpeg` is available through `PATH` enables MP4 embedding.
 
-AllAnime streams are unaffected unless a resolved source explicitly supplies external subtitle metadata.
+Streams without external subtitle metadata are downloaded unchanged.
 
 ## Why files use `.part`
 

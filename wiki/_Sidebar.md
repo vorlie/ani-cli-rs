@@ -14,6 +14,6 @@
 
 - [[Security and Privacy]]
 - [[Building and Releasing]]
-- [[Architecture and AllAnime Scraping]]
+- [[Provider Architecture]]
 - [[Contributing]]
 - [[Publishing the Wiki]]

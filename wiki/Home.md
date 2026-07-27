@@ -1,6 +1,6 @@
 # ani-cli-rs Wiki
 
-`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches AllAnime or Anikoto, resolves episode sources, launches desktop media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
+`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches two independent Anikoto catalogs, resolves native episode sources, launches desktop media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
 
 The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`. The project also exposes an `ani_cli` Rust library.
 
@@ -13,7 +13,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 - **Something failed:** [Troubleshooting](Troubleshooting)
 - **Checking a release:** [Security and Privacy](Security-and-Privacy)
 - **Building or packaging:** [Building and Releasing](Building-and-Releasing)
-- **Working on a provider:** [Provider Architecture](Architecture-and-AllAnime-Scraping) and the [Anikoto/KotoCDN reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-KOTOCDN.md)
+- **Working on a provider:** [Provider Architecture](Provider-Architecture), the [Anikoto API/KotoCDN reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-KOTOCDN.md), and the [Anikoto.cz reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-CZ.md)
 
 ## Platform support
 
@@ -40,7 +40,7 @@ See [Playback and Players](Playback-and-Players) and [Downloads](Downloads) for 
 
 ## Important upstream limitation
 
-AllAnime and its third-party video hosts change frequently. A released episode can have no usable source because every copy is deleted, copyright-blocked, expired, or temporarily returning errors. ani-cli-rs tries supported sources independently and reports partial provider failures, but it cannot restore media that no upstream host currently serves.
+Both Anikoto catalogs and their third-party video hosts change independently. A released episode can have no usable native source because every copy is deleted, blocked, expired, or temporarily failing. ani-cli-rs reports provider-specific failures but cannot restore media that no upstream host currently serves.
 
 ## Project links
 

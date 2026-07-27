@@ -4,12 +4,12 @@ Start by identifying which stage failed:
 
 1. installation or `PATH`;
 2. search/episode discovery;
-3. crypto/bootstrap decoding;
-4. provider source resolution;
+3. provider server/native-source resolution;
+4. KotoCDN relay handling;
 5. player launch;
 6. download transfer/finalization.
 
-The distinction matters: reinstalling will not repair a provider outage, and refreshing crypto will not fix a missing player executable.
+The distinction matters: reinstalling will not repair a provider outage, and changing providers will not fix a missing player executable.
 
 ## Installed but command not found
 
@@ -91,27 +91,19 @@ Also install the corresponding musl linker/toolchain through your distribution.
 
 ## Search works but sources fail
 
-Try:
+Retry once, or select the other catalog with `--provider anikoto2` or `--provider anikoto`. Common categories:
 
-```console
-ani-cli-rs debug --refresh
-ani-cli-rs refresh-cipher-map
-```
+- `rate limit reached`: wait before retrying;
+- `catalog error`: the selected catalog endpoint failed;
+- `no mapping`: the catalog could not map the selected episode to an embed;
+- `native source resolution failed`: returned servers were unsupported, deleted, or changed;
+- `provider playlist exceeds ... limit`: the response violated relay safety bounds.
 
-Then retry. Common categories:
-
-- `AA_CRYPTO_STALE`: frontend and API crypto material disagree or cached material is stale;
-- `AA_CRYPTO_CROSS_KEY`: build/epoch material does not match the API response;
-- `Too many requests`: AllAnime rate limiting; wait before retrying;
-- `released but no supported sources resolved`: episode metadata exists, but all extracted providers failed or are unsupported;
-- `provider reports video unavailable`: the host explicitly reports deletion/blocking;
-- `provider returned an HTTP error`: an AllAnime proxy or video host returned a failing status.
-
-The client retries bounded rate limits and tries dynamic, bundled, legacy, persisted-query, and full-query paths. Repeated rapid retries can prolong upstream throttling.
+Repeated rapid retries can prolong upstream throttling.
 
 ## A title works but another does not
 
-Different episodes use different third-party hosts. One show can resolve through Wix or OK.ru while another has only deleted or protected Filemoon/VidGuard copies. Include the show ID, episode, mode, version, and sanitized provider categories in a bug report.
+Different episodes use different third-party hosts. One show can resolve through MegaPlay or VidTube while another has only unsupported or deleted embeds. Include the show ID, episode, mode, version, and sanitized provider categories in a bug report.
 
 Do not include complete signed media URLs.
 
@@ -125,7 +117,7 @@ Likely causes:
 - router, DNS, antivirus, or corporate filtering;
 - too many parallel connections.
 
-Resolve the source again. Test another network or VPN only if allowed by your network policy. FortiGuard and similar filters may classify Mkissa/AllAnime or media hosts as adult/streaming content even when ani-cli-rs itself works correctly.
+Resolve the source again. Test the other catalog, another network, or a VPN only if allowed by your network policy. FortiGuard and similar filters may classify catalog or media hosts as adult/streaming content even when ani-cli-rs itself works correctly.
 
 ## mpv, VLC, Syncplay, aria2c, yt-dlp, or FFmpeg not found
 

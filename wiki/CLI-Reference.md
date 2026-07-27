@@ -27,7 +27,7 @@ Run `ani-cli-rs --help` or `ani-cli-rs <COMMAND> --help` for the authoritative h
 | `--exit-after-play` | Treat an attached player's failure as a CLI failure |
 | `-N`, `--nextep-countdown` | Show release schedule and exit |
 | `-U`, `--update` | Install the latest release |
-| `-p`, `--provider VALUE` | Select `allanime` (default) or `anikoto` |
+| `-p`, `--provider VALUE` | Select `anikoto` (default) or `anikoto2` (Anikoto.cz) |
 | `-V`, `--version` | Print the version |
 
 Options may appear before, between, or after query words where Clap can interpret them unambiguously.
@@ -54,19 +54,14 @@ Text output is tab-separated and begins with the show ID. JSON output is recomme
 
 ```console
 ani-cli-rs search --json "frieren"
-ani-cli-rs --provider anikoto search --json "frieren"
+ani-cli-rs --provider anikoto2 search --json "black torch"
 ```
 
 ## Show IDs
 
-The scriptable commands do not search anime names. They require the ID returned by `search` or present after `/anime/` in a Mkissa URL:
+The scriptable commands do not search anime names. They require the ID returned by `search`.
 
-```text
-https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
-                        └──── show ID ────┘
-```
-
-Anikoto IDs returned by search begin with `anikoto:` and route automatically. A raw numeric Anikoto series ID is accepted only with `--provider anikoto`. Unprefixed IDs remain AllAnime IDs for compatibility. `--title` changes a player title or output filename; it is not a search query.
+Anikoto API IDs begin with `anikoto:` and Anikoto.cz IDs begin with `anikoto2:`. Both route automatically. A raw numeric Anikoto API series ID is accepted with `--provider anikoto`; a raw Anikoto.cz slug is accepted with `--provider anikoto2`. `--title` changes a player title or output filename; it is not a search query.
 
 ## `episodes`
 
@@ -102,19 +97,12 @@ ani-cli-rs download SHOW_ID EPISODE [OPTIONS]
 
 Options include `--mode`, `-q/--quality`, `--title`, and `--output`. This subcommand is intentionally non-interactive and downloads one episode. Use `ani-cli-rs -d "title"` for title, season, and multi-episode selection.
 
-## Diagnostics and maintenance
+## Maintenance
 
 ```console
-ani-cli-rs debug
-ani-cli-rs debug --refresh
-ani-cli-rs refresh-cipher-map
 ani-cli-rs update --check
 ani-cli-rs update
 ```
-
-`debug` reports active/fallback AllAnime crypto material. Treat its output as diagnostic information and avoid combining it with private network logs. `refresh-cipher-map` downloads and validates the latest substitution table from upstream Bash ani-cli.
-
-Both diagnostic commands are AllAnime-only and reject `--provider anikoto`.
 
 ## Exit behavior
 

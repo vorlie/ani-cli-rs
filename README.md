@@ -1,6 +1,6 @@
 # ani-cli-rs
 
-A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) with AllAnime and Anikoto/MegaPlay catalogs.
+A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) with two independent Anikoto catalogs and native MegaPlay/KotoCDN playback.
 
 `ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
@@ -22,13 +22,13 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 ## Features
 
 - Interactive anime/season and episode selection
-- Subbed and dubbed AllAnime or Anikoto search and playback
+- Subbed and dubbed Anikoto API and Anikoto.cz search and playback
 - Native MegaPlay source extraction and transparent KotoCDN HLS unwrapping
 - mpv, IINA, VLC, and Syncplay support
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
 - Scriptable commands with JSON output
-- Native Rust HTTP and cryptography-no curl, sed, OpenSSL, Botan, or fzf dependency
+- Native Rust HTTP, HTML parsing, and local HLS relay—no Python, curl, sed, OpenSSL, Botan, or fzf dependency
 
 ## Installation
 
@@ -86,7 +86,7 @@ ani-cli-rs -e 2-4 "one piece"
 ani-cli-rs --continue
 ani-cli-rs --download "anime title"
 ani-cli-rs --allow-adult "search query"
-ani-cli-rs --provider anikoto "dandadan"
+ani-cli-rs --provider anikoto2 "black torch"
 ```
 
 Interactive playback remains open after an episode and offers next, replay, previous, episode-selection, and quality controls. Add `--exit-after-play` to exit immediately instead.
@@ -116,7 +116,7 @@ Supported compatibility flags include:
 -a, --allow-adult         Include adult results
 -N, --nextep-countdown    Show release timing
 -U, --update              Update from GitHub Releases
--p, --provider            allanime (default) or anikoto
+-p, --provider            anikoto (default) or anikoto2
     --dub                  Use dubbed results
     --multi-selection      Select multiple episodes
     --no-detach            Keep the player attached
@@ -129,31 +129,27 @@ Run `ani-cli-rs --help` for the authoritative list. Environment variables and ke
 
 ```console
 ani-cli-rs search --json "frieren"
-ani-cli-rs -p anikoto search --json "frieren"
+ani-cli-rs -p anikoto2 search --json "black torch"
 ani-cli-rs episodes --json SHOW_ID --mode sub
 ani-cli-rs links --json SHOW_ID 1 --quality 1080p
 ani-cli-rs play SHOW_ID 1 --title "Frieren" --no-detach
 ani-cli-rs download SHOW_ID 1 --output ./downloads
-ani-cli-rs debug --refresh
-ani-cli-rs refresh-cipher-map
 ani-cli-rs update --check
 ```
 
-`episodes`, `links`, `play`, and `download` require the **show ID returned by `search`**, not an anime title. AllAnime also accepts the ID in a Mkissa URL. For this URL:
+`episodes`, `links`, `play`, and `download` require the **show ID returned by `search`**, not an anime title.
 
-```text
-https://mkissa.to/anime/SyR2K6bGYfKSE6YMm
-```
+Anikoto API results have IDs beginning with `anikoto:`. Anikoto.cz results begin with `anikoto2:`. Both prefixes route automatically, including history entries. Raw numeric Anikoto API IDs require `--provider anikoto`; raw Anikoto.cz slugs require `--provider anikoto2`.
 
-the show ID is `SyR2K6bGYfKSE6YMm`. Anikoto search returns self-identifying IDs beginning with `anikoto:`; those IDs route automatically. Raw numeric Anikoto series IDs require `--provider anikoto`. Use `ani-cli-rs --download "anime title"` when you want interactive name and season selection.
+Use `ani-cli-rs --download "anime title"` when you want interactive name, season, and episode selection.
 
-Set `ANI_CLI_PROVIDER=anikoto` to make Anikoto the interactive/search default. AllAnime remains the compatibility default. Provider catalogs are intentionally not combined and playback never silently crosses between them.
+Set `ANI_CLI_PROVIDER=anikoto2` to make Anikoto.cz the interactive/search default. The catalogs are intentionally not combined and playback never silently crosses between them.
 
 See the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference) for every command and JSON workflow.
 
 ## Security and antivirus notices
 
-Official Windows binaries are currently unsigned and may trigger SmartScreen or heuristic antivirus warnings. AllAnime support includes runtime bootstrap inspection and cryptographic decoding, which can also produce misleading “obfuscation” labels in automated behavior reports.
+Official Windows binaries are currently unsigned and may trigger SmartScreen or heuristic antivirus warnings. ani-cli-rs performs network requests, starts media players/downloaders, and temporarily binds a loopback HLS relay for KotoCDN playback; those behaviors can produce misleading automated behavior classifications.
 
 Release installers verify published checksums. Users who prefer not to run prebuilt binaries can inspect the tagged source and build it with `cargo build --release --locked`. Read [Security and Privacy](https://github.com/vorlie/ani-cli-rs/wiki/Security-and-Privacy) for the full explanation and manual verification steps.
 
@@ -177,7 +173,7 @@ Target-specific Cargo aliases and release packaging are covered in [Building and
 
 The [project Wiki](https://github.com/vorlie/ani-cli-rs/wiki) contains the full user and contributor documentation. Its source is tracked in [`wiki/`](wiki/Home.md) so documentation changes can be reviewed with code changes.
 
-Provider internals are documented in [`docs/ALLANIME-SCRAPING.md`](docs/ALLANIME-SCRAPING.md) and [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md).
+Provider internals are documented in [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) and [`docs/ANIKOTO-CZ.md`](docs/ANIKOTO-CZ.md).
 
 ## Scope
 
