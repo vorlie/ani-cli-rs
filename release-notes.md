@@ -1,4 +1,103 @@
-# ani-cli-rs 0.7.0
+# ani-cli-rs 0.8.0
+
+This release replaces the broken AllAnime/Mkissa integration with a second,
+fully native Anikoto provider. ani-cli-rs now ships two independent catalogs
+without requiring Python or a separately hosted relay.
+
+## Highlights
+
+- Added Anikoto.cz as `--provider anikoto2`, including native search, canonical
+  show selection, fractional episodes, and strict SUB, H-SUB, and DUB
+  availability.
+- Ported the complete Anikoto.cz AJAX workflow to Rust: episode lists, server
+  tokens, optional NekoStream mapper candidates, and server URL exchanges.
+- Added native MegaPlay and VidTube extraction through their player `data-id`
+  and `stream/getSources` responses.
+- Preserved provider referer, origin, user-agent, quality, and subtitle metadata
+  throughout playback and downloads.
+- Expanded HLS master playlists into selectable qualities and deduplicated
+  native sources.
+- Improved the Rust KotoCDN compatibility relay, including correct MIME
+  handling for both `GET` and `HEAD` requests to PNG-wrapped MPEG-TS segments.
+- Added provider-prefixed `anikoto2:` show IDs so scriptable commands and mixed
+  history entries route automatically.
+- Added deterministic parser and relay coverage plus an opt-in live
+  Anikoto.cz search-to-stream smoke test.
+
+## Provider selection
+
+Anikoto API/MegaPlay is now the default:
+
+```console
+ani-cli-rs "frieren"
+ani-cli-rs --provider anikoto "frieren"
+```
+
+Use Anikoto.cz as the independent alternative:
+
+```console
+ani-cli-rs --provider anikoto2 "black torch"
+ani-cli-rs -p anikoto2 search --json "black torch"
+```
+
+The environment equivalent is:
+
+```text
+ANI_CLI_PROVIDER=anikoto2
+```
+
+Provider searches remain separate, and ani-cli-rs never silently switches
+catalogs during source resolution.
+
+## Breaking changes
+
+- `allanime` is no longer an accepted provider.
+- The AllAnime/Mkissa GraphQL client, rotating crypto bootstrap, response
+  decryption, and URL cipher-map implementation have been removed.
+- The `debug` and `refresh-cipher-map` commands have been removed because they
+  existed exclusively for AllAnime.
+- Old unprefixed AllAnime show IDs and history entries can no longer resolve.
+  Search again with either Anikoto provider to create a new self-identifying
+  history entry.
+- Library users must migrate from `AllAnimeClient` to `AnikotoClient` or
+  `AnikotoCzClient`. AllAnime-specific crypto and cipher-map public types are
+  no longer exported.
+
+## No Python runtime dependency
+
+The Anikoto.cz implementation is native Rust. KotoCDN playback uses a
+short-lived Hyper server bound only to `127.0.0.1` on an ephemeral port. It
+rewrites only registered playlist resources, validates upstream URLs, removes
+confirmed PNG prefixes, and shuts down with the attached player or downloader.
+
+The copied Python experiment remains a development reference only and is
+excluded from release packages.
+
+## Documentation
+
+- [`docs/ANIKOTO-CZ.md`](docs/ANIKOTO-CZ.md) documents the complete
+  Anikoto.cz search-to-play workflow.
+- [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) remains the reference
+  for the Anikoto API, MegaPlay, and KotoCDN path.
+- The README, Wiki, issue forms, contributor guidance, and deterministic
+  showcase now describe the Anikoto-only architecture.
+
+## Upgrade
+
+Use the built-in updater:
+
+```console
+ani-cli-rs update
+```
+
+Or reinstall using the platform installation script. Official Windows and
+Linux x86-64 archives should be published with matching SHA-256 checksum files.
+
+**Full changelog:** https://github.com/vorlie/ani-cli-rs/compare/0.7.2...0.8.0
+
+---
+
+# Previous release notes: ani-cli-rs 0.7.0
 
 This release adds Anikoto as an explicit second catalog while keeping AllAnime as the default for Bash ani-cli compatibility.
 
