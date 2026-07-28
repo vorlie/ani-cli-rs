@@ -131,6 +131,27 @@ Get-Command mpv.exe, vlc.exe, syncplay.exe, aria2c.exe, yt-dlp.exe, ffmpeg.exe -
 command -v mpv vlc syncplay aria2c yt-dlp ffmpeg
 ```
 
+## Termux opens terminal VLC or cannot find an Android player
+
+`pkg install vlc` installs a terminal program and does not expose the separately installed Android VLC application. Install an Android player app and ensure the standard Termux tools are current:
+
+```sh
+pkg install termux-tools
+command -v termux-am-starter termux-am am termux-open termux-open-url
+```
+
+Run `ani-cli-rs "title"` to request mpv-android or `ani-cli-rs --vlc "title"` to request Android VLC. If the explicit activity launcher reports a missing socket, ani-cli-rs uses media-typed `termux-open` before falling back to `termux-open-url`. Android's chosen/default media handler controls the fallback, so `--vlc` cannot force VLC there. If Android still opens a browser, clear that browser's default link association and select an installed video player. If the activity launcher is installed at a custom path, set `ANI_CLI_PLAYER` to that launcher.
+
+## Termux playback stops after returning to the terminal
+
+Protected HLS is served through a loopback relay owned by the running ani-cli-rs process. Leave Termux running in the background while watching and press Enter only after playback has ended. Pressing Enter early shuts down the relay and makes the player lose its playlist and segments.
+
+## Termux video plays without external subtitles
+
+Open the Android player's subtitle menu and select the provider track. ani-cli-rs exposes separate provider subtitles as standard HLS subtitle renditions. Device testing confirmed them with mpv-android, VLC, Amnis, and Samsung Video Player, but behavior can still differ between Android versions and player builds. Burned-in subtitles are unaffected.
+
+If a player reports a 30-minute subtitle rendition for an unusual movie or special, the provider subtitle could not be parsed for its final cue time and ani-cli-rs used its bounded fallback duration. Include the provider name, title, episode, and sanitized `links --json` output in a bug report.
+
 Install only the tools needed by your workflow. Direct downloads can fall back to Rust; HLS requires yt-dlp or FFmpeg.
 
 ## `.part` remains after a download

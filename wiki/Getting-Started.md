@@ -12,7 +12,7 @@ The normal flow is:
 2. choose the correct anime entry or season;
 3. choose an episode;
 4. resolve supported sources and requested quality;
-5. launch mpv;
+5. launch the platform player: mpv, IINA, or an Android player from Termux;
 6. use the post-launch menu to choose next, replay, previous, another episode, or another quality.
 
 If the query is omitted, ani-cli-rs prompts for it:

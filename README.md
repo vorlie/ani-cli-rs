@@ -2,7 +2,7 @@
 
 A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) with two independent Anikoto catalogs and native MegaPlay/KotoCDN playback.
 
-`ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
+`ani-cli-rs` provides the familiar interactive ani-cli experience on Windows, Linux, macOS, and Termux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
 ![Automated ani-cli-rs showcase](docs/assets/ani-cli-rs-showcase.gif)
 
@@ -24,7 +24,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 - Interactive anime/season and episode selection
 - Subbed and dubbed Anikoto API and Anikoto.cz search and playback
 - Native MegaPlay source extraction and transparent KotoCDN HLS unwrapping
-- mpv, IINA, VLC, and Syncplay support
+- mpv, IINA, VLC, Android mpv, and Syncplay support
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
 - Scriptable commands with JSON output
@@ -32,7 +32,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 
 ## Installation
 
-Official releases are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users can build from source, but maintainer-built binaries are not currently published for those platforms.
+Official releases are provided for Windows x64 and Linux x86-64. macOS and Termux are tested as source builds; Linux ARM64 is source-buildable but is not maintainer-tested. Prebuilt macOS, Android/Termux, and Linux ARM64 binaries are not currently published.
 
 ### Linux
 
@@ -58,17 +58,33 @@ To use the Inno Setup installer instead:
 .\install.ps1 -UseSetup
 ```
 
+### Android with Termux
+
+Termux is supported through a source build:
+
+```sh
+pkg update
+pkg install git rust termux-tools
+git clone https://github.com/vorlie/ani-cli-rs.git
+cd ani-cli-rs
+cargo build --release --locked
+install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
+```
+
+Install an Android video player such as mpv-android or VLC from an Android app source. Do not use `pkg install vlc`: that package is a terminal VLC build, not the Android application used by this integration.
+
 The scripts verify release archives against their published SHA-256 checksums and install to the user-local `~/.local/bin` directory by default. See the [installation guide](https://github.com/vorlie/ani-cli-rs/wiki/Installation) for PATH help, custom locations, uninstalling, and source builds.
 
 ## Requirements
 
 - Linux and Windows: [mpv](https://mpv.io/) for default playback
-- macOS: [IINA](https://iina.io/) for default playback (`brew install --cask iina`)
+- macOS: [IINA](https://iina.io/) for tested out-of-the-box playback (`brew install --cask iina`)
+- Termux: an Android HLS-capable video player; mpv-android, VLC, Amnis, and Samsung Video Player are device-tested
 - Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
-External programs must be available through `PATH`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
+Desktop programs must be available through `PATH`. On Termux, normal playback requests mpv-android and `--vlc` requests Android VLC when the explicit activity bridge works. If it does not, ani-cli-rs uses Android's media handler through `termux-open`; the chosen/default player then takes precedence over the CLI preference. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 
 ## Quick start
 
@@ -88,6 +104,15 @@ ani-cli-rs --download "anime title"
 ani-cli-rs --allow-adult "search query"
 ani-cli-rs --provider anikoto2 "black torch"
 ```
+
+Termux examples:
+
+```sh
+ani-cli-rs "cyberpunk"
+ani-cli-rs --vlc "cyberpunk"
+```
+
+For protected HLS playback, leave Termux running in the background. Return to it and press Enter only after playback finishes. External provider subtitles are exposed as HLS subtitle tracks; select them from the Android player's subtitle menu when they are not enabled automatically.
 
 Interactive playback remains open after an episode and offers next, replay, previous, episode-selection, and quality controls. Add `--exit-after-play` to exit immediately instead.
 
@@ -110,7 +135,7 @@ Supported compatibility flags include:
 -s, --syncplay            Use Syncplay
 -S, --select-nth          Select the nth search result
 -q, --quality             best, worst, or a resolution
--v, --vlc                 Use VLC
+-v, --vlc                 Use VLC (a preference on Termux fallback paths)
 -e, --episode             Episode or range
 -r, --range               Episode range alias
 -a, --allow-adult         Include adult results
@@ -177,7 +202,7 @@ Provider internals are documented in [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KO
 
 ## Scope
 
-This project targets desktop Windows, Linux, and macOS source builds. rofi/dmenu integration, Android/Termux and iSH adapters, intro skipping, and system-journal logging are not currently included.
+This project targets Windows, Linux, tested macOS source builds, and tested Termux source builds. iSH adapters, rofi/dmenu integration, intro skipping, and system-journal logging are not currently included.
 
 ## License
 

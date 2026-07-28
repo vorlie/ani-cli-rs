@@ -20,16 +20,21 @@ use sha2::{Digest, Sha256};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use url::Url;
 
-use crate::{AniError, RequestHeaders, Result, StreamLink};
+use crate::{AniError, RequestHeaders, Result, StreamLink, SubtitleTrack};
 
 const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SUBTITLE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESOURCES: usize = 16_384;
 const SCAN_LIMIT: usize = 64 * 1024;
+const FALLBACK_SUBTITLE_DURATION_SECONDS: f64 = 30.0 * 60.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ResourceKind {
+    EntryPlaylist,
     Playlist,
     Segment,
+    Subtitle,
+    SubtitlePlaylist,
     Resource,
 }
 
@@ -38,6 +43,8 @@ struct Registered {
     url: Url,
     headers: RequestHeaders,
     kind: ResourceKind,
+    subtitles: Vec<SubtitleTrack>,
+    duration_seconds: Option<f64>,
 }
 
 struct State {
@@ -89,7 +96,7 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
         &state,
         upstream,
         stream.headers.clone(),
-        ResourceKind::Playlist,
+        ResourceKind::EntryPlaylist,
     )?;
     let server_state = Arc::clone(&state);
     let task = tokio::spawn(async move {
@@ -110,10 +117,43 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
     let mut local = stream.clone();
     local.url = local_url(address, &token);
     local.headers = RequestHeaders::default();
+    let mut playlist_subtitles = Vec::with_capacity(local.subtitles.len());
     for track in &mut local.subtitles {
         let url = validate_upstream(&track.url)?;
-        let token = register(&state, url, stream.headers.clone(), ResourceKind::Resource)?;
+        let duration_seconds = probe_subtitle_duration(&state.client, &url, &stream.headers).await;
+        let token = register(
+            &state,
+            url.clone(),
+            stream.headers.clone(),
+            ResourceKind::Subtitle,
+        )?;
         track.url = local_url(address, &token);
+        let playlist_token = register(
+            &state,
+            url,
+            stream.headers.clone(),
+            ResourceKind::SubtitlePlaylist,
+        )?;
+        let mut playlist_track = track.clone();
+        playlist_track.url = local_url(address, &playlist_token);
+        playlist_subtitles.push(playlist_track);
+        if let Some(entry) = state
+            .resources
+            .lock()
+            .expect("relay registry poisoned")
+            .get_mut(&playlist_token)
+        {
+            entry.duration_seconds = duration_seconds;
+        }
+    }
+    if !playlist_subtitles.is_empty()
+        && let Some(entry) = state
+            .resources
+            .lock()
+            .expect("relay registry poisoned")
+            .get_mut(&token)
+    {
+        entry.subtitles = playlist_subtitles;
     }
     Ok((
         HlsRelay {
@@ -175,6 +215,29 @@ async fn handle_inner(
             b"invalid relay token".to_vec(),
         ));
     };
+    if registered.kind == ResourceKind::SubtitlePlaylist {
+        let segment_token = register(
+            state,
+            registered.url.clone(),
+            registered.headers.clone(),
+            ResourceKind::Subtitle,
+        )?;
+        let body = subtitle_playlist(
+            &local_url(state.base, &segment_token),
+            registered
+                .duration_seconds
+                .unwrap_or(FALLBACK_SUBTITLE_DURATION_SECONDS),
+        );
+        return Ok(if request.method() == Method::HEAD {
+            response(StatusCode::OK, "application/vnd.apple.mpegurl", Vec::new())
+        } else {
+            response(
+                StatusCode::OK,
+                "application/vnd.apple.mpegurl",
+                body.into_bytes(),
+            )
+        });
+    }
     let mut upstream = state
         .client
         .request(request.method().clone(), registered.url.clone());
@@ -218,8 +281,10 @@ async fn handle_inner(
         return Ok(result);
     }
     let bytes = upstream.bytes().await?.to_vec();
-    let playlist = registered.kind == ResourceKind::Playlist
-        || content_type.contains("mpegurl")
+    let playlist = matches!(
+        registered.kind,
+        ResourceKind::EntryPlaylist | ResourceKind::Playlist
+    ) || content_type.contains("mpegurl")
         || registered
             .url
             .path()
@@ -235,6 +300,11 @@ async fn handle_inner(
         let text = String::from_utf8(bytes)
             .map_err(|_| AniError::Provider("provider playlist is not UTF-8".into()))?;
         let rewritten = rewrite_playlist(state, &registered, &text)?;
+        let rewritten = if registered.kind == ResourceKind::EntryPlaylist {
+            expose_subtitles(state, &registered, &text, rewritten)?
+        } else {
+            rewritten
+        };
         return Ok(response(
             status,
             "application/vnd.apple.mpegurl",
@@ -280,6 +350,150 @@ fn rewrite_playlist(state: &Arc<State>, parent: &Registered, body: &str) -> Resu
         output.push('\n');
     }
     Ok(output)
+}
+
+fn expose_subtitles(
+    state: &Arc<State>,
+    parent: &Registered,
+    original: &str,
+    rewritten: String,
+) -> Result<String> {
+    if parent.subtitles.is_empty() {
+        return Ok(rewritten);
+    }
+    if original.lines().any(|line| {
+        line.trim_start()
+            .to_ascii_uppercase()
+            .starts_with("#EXT-X-STREAM-INF:")
+    }) {
+        return Ok(add_subtitles_to_master(&rewritten, &parent.subtitles));
+    }
+
+    let media_token = register(
+        state,
+        parent.url.clone(),
+        parent.headers.clone(),
+        ResourceKind::Playlist,
+    )?;
+    let mut master = String::from("#EXTM3U\n#EXT-X-VERSION:3\n");
+    append_subtitle_renditions(&mut master, &parent.subtitles);
+    master.push_str("#EXT-X-STREAM-INF:BANDWIDTH=1,SUBTITLES=\"aniplay-subs\"\n");
+    master.push_str(&local_url(state.base, &media_token));
+    master.push('\n');
+    Ok(master)
+}
+
+fn add_subtitles_to_master(body: &str, subtitles: &[SubtitleTrack]) -> String {
+    let mut output = String::with_capacity(body.len() + subtitles.len() * 160);
+    let mut inserted = false;
+    for line in body.lines() {
+        output.push_str(line);
+        output.push('\n');
+        if !inserted && line.trim().eq_ignore_ascii_case("#EXTM3U") {
+            append_subtitle_renditions(&mut output, subtitles);
+            inserted = true;
+        }
+    }
+    if !inserted {
+        append_subtitle_renditions(&mut output, subtitles);
+    }
+    output
+        .lines()
+        .map(|line| {
+            if line
+                .trim_start()
+                .to_ascii_uppercase()
+                .starts_with("#EXT-X-STREAM-INF:")
+                && !line.to_ascii_uppercase().contains("SUBTITLES=")
+            {
+                format!("{line},SUBTITLES=\"aniplay-subs\"")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+fn append_subtitle_renditions(output: &mut String, subtitles: &[SubtitleTrack]) {
+    let default_index = subtitles
+        .iter()
+        .position(|subtitle| subtitle.default)
+        .unwrap_or(0);
+    for (index, subtitle) in subtitles.iter().enumerate() {
+        let name = hls_attribute(&subtitle.label);
+        let default = if index == default_index { "YES" } else { "NO" };
+        output.push_str(&format!(
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"aniplay-subs\",NAME=\"{name}\",DEFAULT={default},AUTOSELECT=YES,FORCED=NO,URI=\"{}\"\n",
+            subtitle.url
+        ));
+    }
+}
+
+fn hls_attribute(value: &str) -> String {
+    value
+        .replace(['\r', '\n'], " ")
+        .replace('"', "'")
+        .trim()
+        .to_owned()
+}
+
+fn subtitle_playlist(segment_url: &str, duration_seconds: f64) -> String {
+    let duration_seconds = duration_seconds.max(1.0);
+    let target_duration = duration_seconds.ceil() as u64;
+    format!(
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:{target_duration}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:{duration_seconds:.3},\n{segment_url}\n#EXT-X-ENDLIST\n"
+    )
+}
+
+async fn probe_subtitle_duration(
+    client: &Client,
+    url: &Url,
+    headers: &RequestHeaders,
+) -> Option<f64> {
+    let mut request = client.get(url.clone());
+    if let Some(value) = &headers.referer {
+        request = request.header(header::REFERER, value);
+    }
+    if let Some(value) = &headers.origin {
+        request = request.header(header::ORIGIN, value);
+    }
+    for (name, value) in &headers.extra {
+        request = request.header(name, value);
+    }
+    let response = request.send().await.ok()?.error_for_status().ok()?;
+    let bytes = response.bytes().await.ok()?;
+    if bytes.len() > MAX_SUBTITLE_BYTES {
+        return None;
+    }
+    subtitle_duration(std::str::from_utf8(&bytes).ok()?)
+}
+
+fn subtitle_duration(body: &str) -> Option<f64> {
+    body.lines()
+        .filter_map(|line| line.split_once("-->").map(|(_, end)| end))
+        .filter_map(parse_subtitle_timestamp)
+        .reduce(f64::max)
+        .map(|seconds| seconds + 1.0)
+}
+
+fn parse_subtitle_timestamp(value: &str) -> Option<f64> {
+    let timestamp = value
+        .trim()
+        .split_ascii_whitespace()
+        .next()?
+        .replace(',', ".");
+    let parts = timestamp
+        .split(':')
+        .map(str::parse::<f64>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .ok()?;
+    match parts.as_slice() {
+        [minutes, seconds] => Some(minutes * 60.0 + seconds),
+        [hours, minutes, seconds] => Some(hours * 3600.0 + minutes * 60.0 + seconds),
+        _ => None,
+    }
 }
 
 fn rewrite_uri_attributes(state: &Arc<State>, parent: &Registered, line: &str) -> Result<String> {
@@ -357,7 +571,16 @@ fn register(
     let count = state.counter.fetch_add(1, Ordering::Relaxed);
     let token =
         hex::encode(Sha256::digest(format!("{}:{count}:{url}", state.secret)))[..32].to_owned();
-    resources.insert(token.clone(), Registered { url, headers, kind });
+    resources.insert(
+        token.clone(),
+        Registered {
+            url,
+            headers,
+            kind,
+            subtitles: Vec::new(),
+            duration_seconds: None,
+        },
+    );
     state
         .tokens_by_url
         .lock()
@@ -367,8 +590,25 @@ fn register(
 }
 
 fn corrected_content_type(registered: &Registered, upstream: &str, stripped: bool) -> String {
-    if registered.kind == ResourceKind::Playlist {
+    if matches!(
+        registered.kind,
+        ResourceKind::EntryPlaylist | ResourceKind::Playlist
+    ) {
         return "application/vnd.apple.mpegurl".into();
+    }
+    if registered.kind == ResourceKind::Subtitle {
+        let path = registered.url.path().to_ascii_lowercase();
+        return if path.ends_with(".vtt") {
+            "text/vtt".into()
+        } else if path.ends_with(".srt") {
+            "application/x-subrip".into()
+        } else if path.ends_with(".ass") || path.ends_with(".ssa") {
+            "text/x-ssa".into()
+        } else if upstream.is_empty() {
+            "text/plain; charset=utf-8".into()
+        } else {
+            upstream.into()
+        };
     }
     if registered.kind != ResourceKind::Segment {
         return if upstream.is_empty() {
@@ -492,6 +732,52 @@ mod tests {
         assert_eq!(strip_png_wrapper(value.clone()), (value, false));
     }
 
+    #[test]
+    fn adds_external_subtitles_to_master_variants() {
+        let subtitles = vec![
+            SubtitleTrack {
+                label: "English".into(),
+                url: "http://127.0.0.1:1234/r/subtitle-one".into(),
+                default: true,
+            },
+            SubtitleTrack {
+                label: "Signs \"and\" Songs".into(),
+                url: "http://127.0.0.1:1234/r/subtitle-two".into(),
+                default: false,
+            },
+        ];
+        let master = add_subtitles_to_master(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvideo.m3u8\n",
+            &subtitles,
+        );
+
+        assert!(master.contains("TYPE=SUBTITLES,GROUP-ID=\"aniplay-subs\""));
+        assert!(master.contains("NAME=\"English\",DEFAULT=YES"));
+        assert!(master.contains("NAME=\"Signs 'and' Songs\",DEFAULT=NO"));
+        assert!(master.contains("#EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES=\"aniplay-subs\""));
+    }
+
+    #[test]
+    fn subtitle_media_playlist_wraps_the_actual_track() {
+        let playlist = subtitle_playlist("http://127.0.0.1:1234/r/subtitle", 1_421.25);
+        assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
+        assert!(playlist.contains("#EXT-X-TARGETDURATION:1422"));
+        assert!(playlist.contains("#EXTINF:1421.250,"));
+        assert!(playlist.contains("http://127.0.0.1:1234/r/subtitle"));
+        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
+    }
+
+    #[test]
+    fn derives_subtitle_duration_from_webvtt_and_srt_cues() {
+        let webvtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.500\nHello\n\n00:23:40.250 --> 00:23:43.750\nEnd\n";
+        let srt =
+            "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n01:02:03,250 --> 01:02:05,500\nEnd\n";
+
+        assert_eq!(subtitle_duration(webvtt), Some(1_424.75));
+        assert_eq!(subtitle_duration(srt), Some(3_726.5));
+        assert_eq!(subtitle_duration("WEBVTT\n\nNo cues"), None);
+    }
+
     #[tokio::test]
     async fn rewrites_nested_resources_and_unwraps_segments() {
         let server = MockServer::start().await;
@@ -581,6 +867,93 @@ mod tests {
         assert_eq!(segment.headers().get("content-type").unwrap(), "video/mp2t");
         assert_eq!(segment.bytes().await.unwrap()[0], 0x47);
         assert!(media.contains("URI=\"http://127.0.0.1:"));
+    }
+
+    #[tokio::test]
+    async fn wraps_media_playlists_with_external_subtitle_renditions() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/media.m3u8"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/vnd.apple.mpegurl")
+                    .set_body_string("#EXTM3U\n#EXTINF:10,\nsegment.ts\n"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/subtitles.vtt"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/vtt")
+                    .set_body_string("WEBVTT\n"),
+            )
+            .mount(&server)
+            .await;
+
+        let stream = StreamLink {
+            url: format!("{}/media.m3u8", server.uri()),
+            resolution: "Auto".into(),
+            hls: true,
+            provider: "MegaPlay".into(),
+            downloadable: true,
+            headers: RequestHeaders::default(),
+            subtitles: vec![SubtitleTrack {
+                label: "English".into(),
+                url: format!("{}/subtitles.vtt", server.uri()),
+                default: true,
+            }],
+        };
+        let (_relay, local) = relay_stream(&stream).await.unwrap();
+        let client = reqwest::Client::new();
+        let master = client
+            .get(&local.url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+
+        assert!(master.contains("#EXT-X-MEDIA:TYPE=SUBTITLES"));
+        let subtitle_playlist_url = master
+            .lines()
+            .find(|line| line.starts_with("#EXT-X-MEDIA:TYPE=SUBTITLES"))
+            .and_then(|line| line.split("URI=\"").nth(1))
+            .and_then(|value| value.split('"').next())
+            .unwrap();
+        let subtitle_playlist = client
+            .get(subtitle_playlist_url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(subtitle_playlist.contains(&local.subtitles[0].url));
+        let media_url = master
+            .lines()
+            .find(|line| line.starts_with("http://"))
+            .unwrap();
+        let media = client
+            .get(media_url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(media.contains("#EXTINF:10,"));
+        let subtitle = client.get(&local.subtitles[0].url).send().await.unwrap();
+        assert_eq!(
+            subtitle
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "text/vtt"
+        );
     }
 
     #[tokio::test]

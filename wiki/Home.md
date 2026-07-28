@@ -1,6 +1,6 @@
 # ani-cli-rs Wiki
 
-`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches two independent Anikoto catalogs, resolves native episode sources, launches desktop media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
+`ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches two independent Anikoto catalogs, resolves native episode sources, launches desktop or Android media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
 
 The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`. The project also exposes an `ani_cli` Rust library.
 
@@ -23,15 +23,17 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 | Windows on ARM64 | x64 build | Yes | Windows 11 can run the published x64 build through emulation |
 | Linux x86-64 | Yes | Yes | Official release uses musl for broad distribution compatibility |
 | Linux ARM64 | No | Yes | Source build only; not device-tested by the maintainer |
-| macOS Intel/Apple Silicon | No | Yes | Build locally; official macOS assets are intentionally not promised |
-| Android/Termux and iSH | No | Not supported | Outside the desktop-core target |
+| macOS Intel/Apple Silicon | No | Tested | Build locally; IINA is selected automatically |
+| Android/Termux | No | Tested | Build locally; launches an Android media player through Termux intents |
+| iSH | No | Not supported | No iOS player adapter |
 
 ## External programs
 
 The scraper itself does not require curl, sed, OpenSSL, Botan, or fzf. Some actions use programs discovered through `PATH`:
 
-- `mpv` for default playback;
-- VLC with `--vlc`;
+- `mpv` for default desktop playback;
+- an Android HLS-capable player through Termux intents on Android;
+- VLC with `--vlc` (a preference when Termux must use its compatibility fallback);
 - Syncplay with `--syncplay`;
 - `aria2c` for faster direct and delegated HLS downloads;
 - `yt-dlp` and FFmpeg for HLS downloads.

@@ -25,7 +25,7 @@ ANI_CLI_PLAYER=/opt/mpv/bin/mpv ani-cli-rs "title"
 
 ## IINA on macOS
 
-IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`. ani-cli-rs passes provider headers and subtitles through IINA's mpv-compatible options.
+IINA is the tested default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`. ani-cli-rs passes provider headers and subtitles through IINA's mpv-compatible options.
 
 `ANI_CLI_PLAYER` overrides the platform's default executable, so it must point to an IINA-compatible command on macOS or an mpv-compatible command on Linux and Windows.
 
@@ -36,6 +36,28 @@ ani-cli-rs --vlc "title"
 ```
 
 VLC receives `--play-and-exit`, the media title, and `--http-referrer` when required. The executable defaults to `vlc.exe` on Windows and `vlc` elsewhere.
+
+## Android players from Termux
+
+On Android, ani-cli-rs launches an installed Android player through a `VIEW` intent. Normal playback requests mpv-android (`is.xyz.mpv`); `--vlc` requests the Android VLC application instead of a terminal VLC executable.
+
+Ensure the standard Termux tools are installed:
+
+```sh
+pkg install termux-tools
+```
+
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am` and first attempts to target the requested Android player directly. Some Termux app/package combinations expose a socket-backed `termux-am` that cannot connect. In that case ani-cli-rs automatically uses media-typed `termux-open`, falling back again to `termux-open-url` when necessary. Android's chosen/default media handler controls which app opens on this fallback path; `--vlc` is therefore a preference, not a guarantee. The media type helps Android choose a video player instead of a web browser.
+
+HLS playback is routed through ani-cli-rs's loopback relay on Android. After launching the player, the terminal intentionally waits:
+
+```text
+Opened the Android player. Return to Termux and press Enter after playback ends.
+```
+
+This keeps protected playlists, segments, and provider headers available to the Android app. Return to Termux and press Enter only after playback ends; the normal next/replay/previous menu then continues. Non-interactive Android HLS playback is rejected because exiting immediately would destroy the required relay.
+
+Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. For relayed HLS, ani-cli-rs wraps provider WebVTT/SRT tracks in timed subtitle media playlists and publishes them as standard HLS renditions. Select the track from the Android player's subtitle menu if it is not enabled automatically. Device testing confirmed relayed playback and selectable external subtitles with mpv-android, VLC, Amnis, and Samsung Video Player. Compatibility can still vary between Android versions and player builds. Embedded and burned-in subtitles remain unchanged.
 
 ## Syncplay
 

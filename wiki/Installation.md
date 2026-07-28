@@ -1,6 +1,6 @@
 # Installation
 
-Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users build from source.
+Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64, tested macOS, and tested Termux users build from source.
 
 ## Windows: portable installation
 
@@ -76,7 +76,7 @@ The local `cargo release-linux-arm64` alias is intended for contributors with a 
 
 ## macOS
 
-No official macOS release assets are provided. Install the Rust toolchain and build locally:
+No official macOS release assets are provided. The source build and automatic IINA selection have been tested. Install the Rust toolchain and build locally:
 
 ```sh
 git clone https://github.com/vorlie/ani-cli-rs.git
@@ -88,7 +88,24 @@ The binary is placed at `target/release/ani-cli-rs`. Copy it to a directory on y
 
 IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`.
 
-## Build from source on any supported desktop
+## Android with Termux
+
+Termux source builds are tested, but no Android release binary is published. Install a current Termux build from a trusted source, then run:
+
+```sh
+pkg update
+pkg install rust
+git clone https://github.com/vorlie/ani-cli-rs.git
+cd ani-cli-rs
+cargo build --release --locked
+install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
+```
+
+Install an Android HLS-capable video player such as mpv-android or VLC. Do not use `pkg install vlc` for this integration: that installs a terminal VLC build rather than the Android application.
+
+Run `ani-cli-rs "title"` to request mpv-android or `ani-cli-rs --vlc "title"` to request Android VLC. ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. If the explicit activity bridge is incompatible with the installed Termux app, it falls back to `termux-open` with the stream's media type, then `termux-open-url`. On this fallback path Android's chosen/default media handler takes precedence, so `--vlc` cannot guarantee VLC. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
+
+## Build from source on any supported platform
 
 Install a current stable Rust toolchain, then:
 

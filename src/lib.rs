@@ -1,4 +1,4 @@
-//! Reusable Anikoto clients and desktop ani-cli support modules.
+//! Reusable Anikoto clients and cross-platform ani-cli support modules.
 
 mod anikoto;
 mod anikoto_cz;

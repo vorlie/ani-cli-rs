@@ -6,6 +6,13 @@ api_url="https://api.github.com/repos/$repository/releases/latest"
 host_os=$(uname -s)
 host_arch=$(uname -m)
 
+case "${TERMUX_VERSION:-}:${PREFIX:-}" in
+    ?*:*|*:*com.termux*)
+        echo "Official Termux binaries are not provided. Install rust, then build ani-cli-rs from source." >&2
+        exit 2
+        ;;
+esac
+
 case "$host_os:$host_arch" in
     Linux:x86_64) target=x86_64-unknown-linux-musl ;;
     Linux:aarch64|Linux:arm64)

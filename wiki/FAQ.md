@@ -44,11 +44,15 @@ The official musl binary is intended to be portable across common distributions 
 
 ## Why are there no macOS releases?
 
-The project avoids consuming limited, higher-cost hosted macOS CI minutes. macOS remains source-buildable, but official assets are not promised.
+The project avoids consuming limited, higher-cost hosted macOS CI minutes. macOS source builds and automatic IINA playback are tested, but official assets are not promised.
 
 ## Is there an official Linux ARM64 build?
 
 No. Linux ARM64 can be built from source, and a Cargo alias exists for contributor cross-builds, but the maintainer does not have ARM64 Linux hardware for device testing and does not publish an ARM64 release asset.
+
+## Does Termux work?
+
+Termux source builds are tested. ani-cli-rs requests mpv-android normally or Android VLC with `--vlc`. If the explicit activity bridge is unavailable, it uses Android's media handler through `termux-open`; the Android default or user selection then takes precedence over `--vlc`. Keep Termux running until relayed playback ends. A terminal VLC installed with `pkg install vlc` is not the Android application and is intentionally not selected.
 
 ## Why does antivirus flag the Windows executable?
 
