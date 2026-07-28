@@ -23,8 +23,10 @@ use url::Url;
 use crate::{AniError, RequestHeaders, Result, StreamLink, SubtitleTrack};
 
 const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SUBTITLE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESOURCES: usize = 16_384;
 const SCAN_LIMIT: usize = 64 * 1024;
+const FALLBACK_SUBTITLE_DURATION_SECONDS: f64 = 30.0 * 60.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ResourceKind {
@@ -42,6 +44,7 @@ struct Registered {
     headers: RequestHeaders,
     kind: ResourceKind,
     subtitles: Vec<SubtitleTrack>,
+    duration_seconds: Option<f64>,
 }
 
 struct State {
@@ -117,6 +120,7 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
     let mut playlist_subtitles = Vec::with_capacity(local.subtitles.len());
     for track in &mut local.subtitles {
         let url = validate_upstream(&track.url)?;
+        let duration_seconds = probe_subtitle_duration(&state.client, &url, &stream.headers).await;
         let token = register(
             &state,
             url.clone(),
@@ -133,6 +137,14 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
         let mut playlist_track = track.clone();
         playlist_track.url = local_url(address, &playlist_token);
         playlist_subtitles.push(playlist_track);
+        if let Some(entry) = state
+            .resources
+            .lock()
+            .expect("relay registry poisoned")
+            .get_mut(&playlist_token)
+        {
+            entry.duration_seconds = duration_seconds;
+        }
     }
     if !playlist_subtitles.is_empty()
         && let Some(entry) = state
@@ -210,7 +222,12 @@ async fn handle_inner(
             registered.headers.clone(),
             ResourceKind::Subtitle,
         )?;
-        let body = subtitle_playlist(&local_url(state.base, &segment_token));
+        let body = subtitle_playlist(
+            &local_url(state.base, &segment_token),
+            registered
+                .duration_seconds
+                .unwrap_or(FALLBACK_SUBTITLE_DURATION_SECONDS),
+        );
         return Ok(if request.method() == Method::HEAD {
             response(StatusCode::OK, "application/vnd.apple.mpegurl", Vec::new())
         } else {
@@ -422,10 +439,61 @@ fn hls_attribute(value: &str) -> String {
         .to_owned()
 }
 
-fn subtitle_playlist(segment_url: &str) -> String {
+fn subtitle_playlist(segment_url: &str, duration_seconds: f64) -> String {
+    let duration_seconds = duration_seconds.max(1.0);
+    let target_duration = duration_seconds.ceil() as u64;
     format!(
-        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:86400\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:86400.000,\n{segment_url}\n#EXT-X-ENDLIST\n"
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:{target_duration}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:{duration_seconds:.3},\n{segment_url}\n#EXT-X-ENDLIST\n"
     )
+}
+
+async fn probe_subtitle_duration(
+    client: &Client,
+    url: &Url,
+    headers: &RequestHeaders,
+) -> Option<f64> {
+    let mut request = client.get(url.clone());
+    if let Some(value) = &headers.referer {
+        request = request.header(header::REFERER, value);
+    }
+    if let Some(value) = &headers.origin {
+        request = request.header(header::ORIGIN, value);
+    }
+    for (name, value) in &headers.extra {
+        request = request.header(name, value);
+    }
+    let response = request.send().await.ok()?.error_for_status().ok()?;
+    let bytes = response.bytes().await.ok()?;
+    if bytes.len() > MAX_SUBTITLE_BYTES {
+        return None;
+    }
+    subtitle_duration(std::str::from_utf8(&bytes).ok()?)
+}
+
+fn subtitle_duration(body: &str) -> Option<f64> {
+    body.lines()
+        .filter_map(|line| line.split_once("-->").map(|(_, end)| end))
+        .filter_map(parse_subtitle_timestamp)
+        .reduce(f64::max)
+        .map(|seconds| seconds + 1.0)
+}
+
+fn parse_subtitle_timestamp(value: &str) -> Option<f64> {
+    let timestamp = value
+        .trim()
+        .split_ascii_whitespace()
+        .next()?
+        .replace(',', ".");
+    let parts = timestamp
+        .split(':')
+        .map(str::parse::<f64>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .ok()?;
+    match parts.as_slice() {
+        [minutes, seconds] => Some(minutes * 60.0 + seconds),
+        [hours, minutes, seconds] => Some(hours * 3600.0 + minutes * 60.0 + seconds),
+        _ => None,
+    }
 }
 
 fn rewrite_uri_attributes(state: &Arc<State>, parent: &Registered, line: &str) -> Result<String> {
@@ -510,6 +578,7 @@ fn register(
             headers,
             kind,
             subtitles: Vec::new(),
+            duration_seconds: None,
         },
     );
     state
@@ -690,11 +759,23 @@ mod tests {
 
     #[test]
     fn subtitle_media_playlist_wraps_the_actual_track() {
-        let playlist = subtitle_playlist("http://127.0.0.1:1234/r/subtitle");
+        let playlist = subtitle_playlist("http://127.0.0.1:1234/r/subtitle", 1_421.25);
         assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
-        assert!(playlist.contains("#EXTINF:86400.000,"));
+        assert!(playlist.contains("#EXT-X-TARGETDURATION:1422"));
+        assert!(playlist.contains("#EXTINF:1421.250,"));
         assert!(playlist.contains("http://127.0.0.1:1234/r/subtitle"));
         assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
+    }
+
+    #[test]
+    fn derives_subtitle_duration_from_webvtt_and_srt_cues() {
+        let webvtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.500\nHello\n\n00:23:40.250 --> 00:23:43.750\nEnd\n";
+        let srt =
+            "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n01:02:03,250 --> 01:02:05,500\nEnd\n";
+
+        assert_eq!(subtitle_duration(webvtt), Some(1_424.75));
+        assert_eq!(subtitle_duration(srt), Some(3_726.5));
+        assert_eq!(subtitle_duration("WEBVTT\n\nNo cues"), None);
     }
 
     #[tokio::test]
