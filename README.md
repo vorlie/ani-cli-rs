@@ -58,18 +58,33 @@ To use the Inno Setup installer instead:
 .\install.ps1 -UseSetup
 ```
 
+### Android with Termux
+
+Termux is supported through a source build:
+
+```sh
+pkg update
+pkg install git rust termux-tools
+git clone https://github.com/vorlie/ani-cli-rs.git
+cd ani-cli-rs
+cargo build --release --locked
+install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
+```
+
+Install an Android video player such as mpv-android or VLC from an Android app source. Do not use `pkg install vlc`: that package is a terminal VLC build, not the Android application used by this integration.
+
 The scripts verify release archives against their published SHA-256 checksums and install to the user-local `~/.local/bin` directory by default. See the [installation guide](https://github.com/vorlie/ani-cli-rs/wiki/Installation) for PATH help, custom locations, uninstalling, and source builds.
 
 ## Requirements
 
 - Linux and Windows: [mpv](https://mpv.io/) for default playback
 - macOS: [IINA](https://iina.io/) for tested out-of-the-box playback (`brew install --cask iina`)
-- Termux: the Android [mpv](https://github.com/mpv-android/mpv-android) app; Android VLC is available with `--vlc`
+- Termux: an Android HLS-capable video player such as [mpv-android](https://github.com/mpv-android/mpv-android) or VLC
 - Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
-Desktop programs must be available through `PATH`. Termux first targets Android player apps through `termux-am-starter`, `termux-am`, or `am`. If that activity bridge is unavailable, ani-cli-rs falls back to a media-typed `termux-open`, then generic `termux-open-url`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
+Desktop programs must be available through `PATH`. On Termux, normal playback requests mpv-android and `--vlc` requests Android VLC when the explicit activity bridge works. If it does not, ani-cli-rs uses Android's media handler through `termux-open`; the chosen/default player then takes precedence over the CLI preference. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 
 ## Quick start
 
@@ -89,6 +104,15 @@ ani-cli-rs --download "anime title"
 ani-cli-rs --allow-adult "search query"
 ani-cli-rs --provider anikoto2 "black torch"
 ```
+
+Termux examples:
+
+```sh
+ani-cli-rs "cyberpunk"
+ani-cli-rs --vlc "cyberpunk"
+```
+
+For protected HLS playback, leave Termux running in the background. Return to it and press Enter only after playback finishes. External provider subtitles are exposed as HLS subtitle tracks; select them from the Android player's subtitle menu when they are not enabled automatically.
 
 Interactive playback remains open after an episode and offers next, replay, previous, episode-selection, and quality controls. Add `--exit-after-play` to exit immediately instead.
 
@@ -111,7 +135,7 @@ Supported compatibility flags include:
 -s, --syncplay            Use Syncplay
 -S, --select-nth          Select the nth search result
 -q, --quality             best, worst, or a resolution
--v, --vlc                 Use VLC
+-v, --vlc                 Use VLC (a preference on Termux fallback paths)
 -e, --episode             Episode or range
 -r, --range               Episode range alias
 -a, --allow-adult         Include adult results

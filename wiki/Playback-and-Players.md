@@ -39,7 +39,7 @@ VLC receives `--play-and-exit`, the media title, and `--http-referrer` when requ
 
 ## Android players from Termux
 
-On Android, ani-cli-rs launches the installed Android player through an explicit `VIEW` intent. Android mpv (`is.xyz.mpv`) is the default; `--vlc` targets the Android VLC application instead of a terminal VLC executable.
+On Android, ani-cli-rs launches an installed Android player through a `VIEW` intent. Normal playback requests mpv-android (`is.xyz.mpv`); `--vlc` requests the Android VLC application instead of a terminal VLC executable.
 
 Ensure the standard Termux tools are installed:
 
@@ -47,7 +47,7 @@ Ensure the standard Termux tools are installed:
 pkg install termux-tools
 ```
 
-ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am` and first attempts to target the requested Android player directly. Some Termux app/package combinations expose a socket-backed `termux-am` that cannot connect. In that case ani-cli-rs automatically uses media-typed `termux-open`, falling back again to `termux-open-url` when necessary. The media type helps Android choose an installed video player instead of a web browser.
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am` and first attempts to target the requested Android player directly. Some Termux app/package combinations expose a socket-backed `termux-am` that cannot connect. In that case ani-cli-rs automatically uses media-typed `termux-open`, falling back again to `termux-open-url` when necessary. Android's chosen/default media handler controls which app opens on this fallback path; `--vlc` is therefore a preference, not a guarantee. The media type helps Android choose a video player instead of a web browser.
 
 HLS playback is routed through ani-cli-rs's loopback relay on Android. After launching the player, the terminal intentionally waits:
 
@@ -57,7 +57,7 @@ Opened the Android player. Return to Termux and press Enter after playback ends.
 
 This keeps protected playlists, segments, and provider headers available to the Android app. Return to Termux and press Enter only after playback ends; the normal next/replay/previous menu then continues. Non-interactive Android HLS playback is rejected because exiting immediately would destroy the required relay.
 
-Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. For relayed HLS, ani-cli-rs wraps provider WebVTT tracks in subtitle media playlists and publishes them as standard HLS renditions so compatible Android players can discover and select them. Embedded and burned-in subtitles remain unchanged.
+Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. For relayed HLS, ani-cli-rs wraps provider WebVTT/SRT tracks in timed subtitle media playlists and publishes them as standard HLS renditions. Select the track from the Android player's subtitle menu if it is not enabled automatically. Player support varies: mpv-android and VLC are the primary tested targets, while OEM and third-party players may ignore optional HLS subtitle renditions. Embedded and burned-in subtitles remain unchanged.
 
 ## Syncplay
 
