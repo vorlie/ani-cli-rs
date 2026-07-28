@@ -32,6 +32,7 @@ enum ResourceKind {
     Playlist,
     Segment,
     Subtitle,
+    SubtitlePlaylist,
     Resource,
 }
 
@@ -113,19 +114,34 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
     let mut local = stream.clone();
     local.url = local_url(address, &token);
     local.headers = RequestHeaders::default();
+    let mut playlist_subtitles = Vec::with_capacity(local.subtitles.len());
     for track in &mut local.subtitles {
         let url = validate_upstream(&track.url)?;
-        let token = register(&state, url, stream.headers.clone(), ResourceKind::Subtitle)?;
+        let token = register(
+            &state,
+            url.clone(),
+            stream.headers.clone(),
+            ResourceKind::Subtitle,
+        )?;
         track.url = local_url(address, &token);
+        let playlist_token = register(
+            &state,
+            url,
+            stream.headers.clone(),
+            ResourceKind::SubtitlePlaylist,
+        )?;
+        let mut playlist_track = track.clone();
+        playlist_track.url = local_url(address, &playlist_token);
+        playlist_subtitles.push(playlist_track);
     }
-    if !local.subtitles.is_empty()
+    if !playlist_subtitles.is_empty()
         && let Some(entry) = state
             .resources
             .lock()
             .expect("relay registry poisoned")
             .get_mut(&token)
     {
-        entry.subtitles = local.subtitles.clone();
+        entry.subtitles = playlist_subtitles;
     }
     Ok((
         HlsRelay {
@@ -187,6 +203,24 @@ async fn handle_inner(
             b"invalid relay token".to_vec(),
         ));
     };
+    if registered.kind == ResourceKind::SubtitlePlaylist {
+        let segment_token = register(
+            state,
+            registered.url.clone(),
+            registered.headers.clone(),
+            ResourceKind::Subtitle,
+        )?;
+        let body = subtitle_playlist(&local_url(state.base, &segment_token));
+        return Ok(if request.method() == Method::HEAD {
+            response(StatusCode::OK, "application/vnd.apple.mpegurl", Vec::new())
+        } else {
+            response(
+                StatusCode::OK,
+                "application/vnd.apple.mpegurl",
+                body.into_bytes(),
+            )
+        });
+    }
     let mut upstream = state
         .client
         .request(request.method().clone(), registered.url.clone());
@@ -386,6 +420,12 @@ fn hls_attribute(value: &str) -> String {
         .replace('"', "'")
         .trim()
         .to_owned()
+}
+
+fn subtitle_playlist(segment_url: &str) -> String {
+    format!(
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:86400\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:86400.000,\n{segment_url}\n#EXT-X-ENDLIST\n"
+    )
 }
 
 fn rewrite_uri_attributes(state: &Arc<State>, parent: &Registered, line: &str) -> Result<String> {
@@ -648,6 +688,15 @@ mod tests {
         assert!(master.contains("#EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES=\"aniplay-subs\""));
     }
 
+    #[test]
+    fn subtitle_media_playlist_wraps_the_actual_track() {
+        let playlist = subtitle_playlist("http://127.0.0.1:1234/r/subtitle");
+        assert!(playlist.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
+        assert!(playlist.contains("#EXTINF:86400.000,"));
+        assert!(playlist.contains("http://127.0.0.1:1234/r/subtitle"));
+        assert!(playlist.ends_with("#EXT-X-ENDLIST\n"));
+    }
+
     #[tokio::test]
     async fn rewrites_nested_resources_and_unwraps_segments() {
         let server = MockServer::start().await;
@@ -786,10 +835,24 @@ mod tests {
             .unwrap();
 
         assert!(master.contains("#EXT-X-MEDIA:TYPE=SUBTITLES"));
-        assert!(master.contains(&local.subtitles[0].url));
+        let subtitle_playlist_url = master
+            .lines()
+            .find(|line| line.starts_with("#EXT-X-MEDIA:TYPE=SUBTITLES"))
+            .and_then(|line| line.split("URI=\"").nth(1))
+            .and_then(|value| value.split('"').next())
+            .unwrap();
+        let subtitle_playlist = client
+            .get(subtitle_playlist_url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(subtitle_playlist.contains(&local.subtitles[0].url));
         let media_url = master
             .lines()
-            .find(|line| line.starts_with("http://") && *line != local.subtitles[0].url)
+            .find(|line| line.starts_with("http://"))
             .unwrap();
         let media = client
             .get(media_url)

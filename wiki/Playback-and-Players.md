@@ -57,7 +57,7 @@ Opened the Android player. Return to Termux and press Enter after playback ends.
 
 This keeps protected playlists, segments, and provider headers available to the Android app. Return to Termux and press Enter only after playback ends; the normal next/replay/previous menu then continues. Non-interactive Android HLS playback is rejected because exiting immediately would destroy the required relay.
 
-Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. For relayed HLS, ani-cli-rs publishes provider WebVTT tracks as standard HLS subtitle renditions so compatible Android players can discover and select them. Embedded and burned-in subtitles remain unchanged.
+Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. For relayed HLS, ani-cli-rs wraps provider WebVTT tracks in subtitle media playlists and publishes them as standard HLS renditions so compatible Android players can discover and select them. Embedded and burned-in subtitles remain unchanged.
 
 ## Syncplay
 
