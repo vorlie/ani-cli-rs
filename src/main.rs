@@ -246,129 +246,148 @@ async fn run(cli: Cli) -> Result<()> {
             .transpose()?
             .unwrap_or_default()
     };
+    let player = build_legacy_player(&cli);
     let terminal = std::io::stdin().is_terminal();
-    let (show, episodes, selected, prepared_downloads) = if cli.continue_watching {
-        let Some((show, episodes, initial_episode)) =
-            continue_selection(&clients, &history, mode, cli.select_nth).await?
-        else {
-            return Ok(());
-        };
-        let selection = cli
-            .episode
-            .clone()
-            .or(initial_episode)
-            .ok_or_else(|| AniError::Unavailable("history entry has no next episode".into()))?;
-        let selected = expand_episode_selection(&selection, &episodes)?;
-        let prepared = if cli.download {
-            Some(require_download_preflight(
-                preflight_downloads(&clients, &show, &selected, mode, &cli.quality).await?,
-            )?)
-        } else {
-            None
-        };
-        (show, episodes, selected, prepared)
+    let mut use_continue = cli.continue_watching;
+    let mut initial_query = if cli.query.is_empty() {
+        None
     } else {
-        let mut initial_query = if cli.query.is_empty() {
-            None
-        } else {
-            Some(cli.query.join(" "))
-        };
-        'search: loop {
-            let query = if let Some(query) = initial_query.take() {
-                query
-            } else {
-                Input::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Search anime")
-                    .interact_text()
-                    .map_err(dialog_error)?
+        Some(cli.query.join(" "))
+    };
+    loop {
+        let (show, episodes, selected, prepared_downloads) = if use_continue {
+            let Some((show, episodes, initial_episode)) =
+                continue_selection(&clients, &history, mode, cli.select_nth).await?
+            else {
+                return Ok(());
             };
-            let results = clients
-                .search_with_options(
-                    cli.provider.unwrap_or_default(),
-                    &query,
-                    mode,
-                    SearchOptions {
-                        allow_adult: cli.allow_adult,
-                    },
-                )
-                .await?;
-            'anime: loop {
-                let purpose = if cli.download {
-                    SelectionPurpose::Download
+            let selection =
+                cli.episode.clone().or(initial_episode).ok_or_else(|| {
+                    AniError::Unavailable("history entry has no next episode".into())
+                })?;
+            let selected = expand_episode_selection(&selection, &episodes)?;
+            let prepared = if cli.download {
+                Some(require_download_preflight(
+                    preflight_downloads(&clients, &show, &selected, mode, &cli.quality).await?,
+                )?)
+            } else {
+                None
+            };
+            (show, episodes, selected, prepared)
+        } else {
+            'search: loop {
+                let query = if let Some(query) = initial_query.take() {
+                    query
                 } else {
-                    SelectionPurpose::Watch
+                    Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Search anime")
+                        .interact_text()
+                        .map_err(dialog_error)?
                 };
-                let Some(show) = select_search_result(&results, cli.select_nth, purpose)? else {
-                    continue 'search;
-                };
-                let episodes = clients.episodes(&show.id, show.provider, mode).await?;
-                'episode: loop {
-                    let selection = if let Some(selection) = cli.episode.clone() {
-                        selection
+                let results = clients
+                    .search_with_options(
+                        cli.provider.unwrap_or_default(),
+                        &query,
+                        mode,
+                        SearchOptions {
+                            allow_adult: cli.allow_adult,
+                        },
+                    )
+                    .await?;
+                'anime: loop {
+                    let purpose = if cli.download {
+                        SelectionPurpose::Download
                     } else {
-                        let Some(selection) =
-                            select_initial_episodes(&episodes, cli.multi_selection, purpose)?
-                        else {
-                            if results.len() == 1 {
-                                continue 'search;
-                            }
-                            continue 'anime;
+                        SelectionPurpose::Watch
+                    };
+                    let Some(show) = select_search_result(&results, cli.select_nth, purpose)?
+                    else {
+                        continue 'search;
+                    };
+                    let episodes = clients.episodes(&show.id, show.provider, mode).await?;
+                    'episode: loop {
+                        let selection = if let Some(selection) = cli.episode.clone() {
+                            selection
+                        } else {
+                            let Some(selection) =
+                                select_initial_episodes(&episodes, cli.multi_selection, purpose)?
+                            else {
+                                if results.len() == 1 {
+                                    continue 'search;
+                                }
+                                continue 'anime;
+                            };
+                            selection
                         };
-                        selection
-                    };
-                    let selected = expand_episode_selection(&selection, &episodes)?;
-                    let prepared = if cli.download {
-                        match preflight_downloads(&clients, &show, &selected, mode, &cli.quality)
+                        let selected = expand_episode_selection(&selection, &episodes)?;
+                        let prepared = if cli.download {
+                            match preflight_downloads(
+                                &clients,
+                                &show,
+                                &selected,
+                                mode,
+                                &cli.quality,
+                            )
                             .await?
-                        {
-                            DownloadPreflight::Ready(prepared) => Some(prepared),
-                            DownloadPreflight::Unavailable(failures)
-                                if can_retry_download_selection(
-                                    cli.episode.is_some(),
-                                    terminal,
-                                    cli.continue_watching,
-                                ) =>
                             {
-                                print_preflight_failures(&failures);
-                                continue 'episode;
+                                DownloadPreflight::Ready(prepared) => Some(prepared),
+                                DownloadPreflight::Unavailable(failures)
+                                    if can_retry_download_selection(
+                                        cli.episode.is_some(),
+                                        terminal,
+                                        use_continue,
+                                    ) =>
+                                {
+                                    print_preflight_failures(&failures);
+                                    continue 'episode;
+                                }
+                                DownloadPreflight::Unavailable(failures) => {
+                                    return Err(download_preflight_error(&failures));
+                                }
                             }
-                            DownloadPreflight::Unavailable(failures) => {
-                                return Err(download_preflight_error(&failures));
-                            }
-                        }
-                    } else {
-                        None
-                    };
-                    break 'search (show, episodes, selected, prepared);
+                        } else {
+                            None
+                        };
+                        break 'search (show, episodes, selected, prepared);
+                    }
                 }
             }
+        };
+        use_continue = false;
+        let download_directory = std::env::var_os("ANI_CLI_DOWNLOAD_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let context = PlaybackContext {
+            clients: &clients,
+            history: &history,
+            show: &show,
+            episodes: &episodes,
+            mode,
+            download_directory,
+            player: &player,
+        };
+        if let Some(prepared) = prepared_downloads {
+            for episode in &prepared {
+                execute_prepared_episode(&context, episode, true).await?;
+            }
+        } else {
+            for episode in &selected {
+                play_or_download(&context, episode, &cli.quality, false).await?;
+            }
         }
-    };
-    let player = build_legacy_player(&cli);
-    let download_directory = std::env::var_os("ANI_CLI_DOWNLOAD_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let context = PlaybackContext {
-        clients: &clients,
-        history: &history,
-        show: &show,
-        episodes: &episodes,
-        mode,
-        download_directory,
-        player: &player,
-    };
-    if let Some(prepared) = prepared_downloads {
-        for episode in &prepared {
-            execute_prepared_episode(&context, episode, true).await?;
-        }
-    } else {
-        for episode in &selected {
-            play_or_download(&context, episode, &cli.quality, false).await?;
-        }
-    }
 
-    if should_offer_playback_controls(selected.len(), terminal, cli.download, cli.exit_after_play) {
-        interactive_after_play(&context, &selected[0], &cli.quality).await?;
+        if should_offer_playback_controls(
+            selected.len(),
+            terminal,
+            cli.download,
+            cli.exit_after_play,
+        ) && interactive_after_play(&context, &selected[0], &cli.quality).await?
+            == AfterPlayAction::Search
+        {
+            initial_query = None;
+            continue;
+        }
+        break;
     }
     Ok(())
 }
@@ -1130,7 +1149,7 @@ async fn interactive_after_play(
     context: &PlaybackContext<'_>,
     first: &str,
     initial_quality: &str,
-) -> Result<()> {
+) -> Result<AfterPlayAction> {
     let mut episode = first.to_owned();
     let mut quality = initial_quality.to_owned();
     loop {
@@ -1149,7 +1168,7 @@ async fn interactive_after_play(
             .interact_opt()
             .map_err(dialog_error)?
         else {
-            break;
+            break Ok(AfterPlayAction::Done);
         };
         match actions[choice] {
             PlaybackAction::Next => episode = adjacent_episode(context.episodes, &episode, 1)?,
@@ -1187,11 +1206,17 @@ async fn interactive_after_play(
                 };
                 quality = streams[index].resolution.clone();
             }
-            PlaybackAction::Quit => break,
+            PlaybackAction::BackToSearch => break Ok(AfterPlayAction::Search),
+            PlaybackAction::Quit => break Ok(AfterPlayAction::Done),
         }
         play_or_download(context, &episode, &quality, false).await?;
     }
-    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AfterPlayAction {
+    Done,
+    Search,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1201,6 +1226,7 @@ enum PlaybackAction {
     Previous,
     Select,
     ChangeQuality,
+    BackToSearch,
     Quit,
 }
 
@@ -1212,6 +1238,7 @@ impl PlaybackAction {
             Self::Previous => "Previous episode".into(),
             Self::Select => "Choose another episode".into(),
             Self::ChangeQuality => format!("Change quality (current: {quality})"),
+            Self::BackToSearch => "Back to anime search".into(),
             Self::Quit => "Quit ani-cli-rs".into(),
         }
     }
@@ -1230,6 +1257,7 @@ fn playback_actions(episodes: &[String], current: &str) -> Vec<PlaybackAction> {
     actions.extend([
         PlaybackAction::Select,
         PlaybackAction::ChangeQuality,
+        PlaybackAction::BackToSearch,
         PlaybackAction::Quit,
     ]);
     actions
@@ -1403,6 +1431,7 @@ mod tests {
                 PlaybackAction::Replay,
                 PlaybackAction::Select,
                 PlaybackAction::ChangeQuality,
+                PlaybackAction::BackToSearch,
                 PlaybackAction::Quit,
             ]
         );
@@ -1413,6 +1442,7 @@ mod tests {
                 PlaybackAction::Previous,
                 PlaybackAction::Select,
                 PlaybackAction::ChangeQuality,
+                PlaybackAction::BackToSearch,
                 PlaybackAction::Quit,
             ]
         );
