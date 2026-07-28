@@ -25,7 +25,7 @@ ANI_CLI_PLAYER=/opt/mpv/bin/mpv ani-cli-rs "title"
 
 ## IINA on macOS
 
-IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`. ani-cli-rs passes provider headers and subtitles through IINA's mpv-compatible options.
+IINA is the tested default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`. ani-cli-rs passes provider headers and subtitles through IINA's mpv-compatible options.
 
 `ANI_CLI_PLAYER` overrides the platform's default executable, so it must point to an IINA-compatible command on macOS or an mpv-compatible command on Linux and Windows.
 
@@ -36,6 +36,28 @@ ani-cli-rs --vlc "title"
 ```
 
 VLC receives `--play-and-exit`, the media title, and `--http-referrer` when required. The executable defaults to `vlc.exe` on Windows and `vlc` elsewhere.
+
+## Android players from Termux
+
+On Android, ani-cli-rs launches the installed Android player through an explicit `VIEW` intent. Android mpv (`is.xyz.mpv`) is the default; `--vlc` targets the Android VLC application instead of a terminal VLC executable.
+
+Install the activity bridge in Termux:
+
+```sh
+pkg install termux-api
+```
+
+The matching Termux:API companion application may also be required. ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`. If none can be started, install or repair Termux:API rather than installing `vlc` inside Termux.
+
+HLS playback is routed through ani-cli-rs's loopback relay on Android. After launching the player, the terminal intentionally waits:
+
+```text
+Opened the Android player. Return to Termux and press Enter after playback ends.
+```
+
+This keeps protected playlists, segments, and provider headers available to the Android app. Return to Termux and press Enter only after playback ends; the normal next/replay/previous menu then continues. Non-interactive Android HLS playback is rejected because exiting immediately would destroy the required relay.
+
+Android intent APIs do not accept the same mpv/VLC command-line options as desktop executables. Subtitle behavior therefore depends on what the selected stream embeds and what the Android player discovers itself.
 
 ## Syncplay
 

@@ -2,7 +2,7 @@
 
 A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) with two independent Anikoto catalogs and native MegaPlay/KotoCDN playback.
 
-`ani-cli-rs` provides the familiar interactive ani-cli experience on Windows and Linux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
+`ani-cli-rs` provides the familiar interactive ani-cli experience on Windows, Linux, macOS, and Termux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
 ![Automated ani-cli-rs showcase](docs/assets/ani-cli-rs-showcase.gif)
 
@@ -24,7 +24,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 - Interactive anime/season and episode selection
 - Subbed and dubbed Anikoto API and Anikoto.cz search and playback
 - Native MegaPlay source extraction and transparent KotoCDN HLS unwrapping
-- mpv, IINA, VLC, and Syncplay support
+- mpv, IINA, VLC, Android mpv, and Syncplay support
 - Quality selection, episode ranges, history, and continuation
 - Preflighted batch downloads with aria2, yt-dlp, FFmpeg, and built-in fallbacks
 - Scriptable commands with JSON output
@@ -32,7 +32,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 
 ## Installation
 
-Official releases are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users can build from source, but maintainer-built binaries are not currently published for those platforms.
+Official releases are provided for Windows x64 and Linux x86-64. macOS and Termux are tested as source builds; Linux ARM64 is source-buildable but is not maintainer-tested. Prebuilt macOS, Android/Termux, and Linux ARM64 binaries are not currently published.
 
 ### Linux
 
@@ -63,12 +63,13 @@ The scripts verify release archives against their published SHA-256 checksums an
 ## Requirements
 
 - Linux and Windows: [mpv](https://mpv.io/) for default playback
-- macOS: [IINA](https://iina.io/) for default playback (`brew install --cask iina`)
+- macOS: [IINA](https://iina.io/) for tested out-of-the-box playback (`brew install --cask iina`)
+- Termux: `termux-api` plus the Android [mpv](https://github.com/mpv-android/mpv-android) app; Android VLC is available with `--vlc`
 - Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
-External programs must be available through `PATH`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
+Desktop programs must be available through `PATH`. Termux launches Android player apps through `termux-am-starter`, `termux-am`, or `am`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 
 ## Quick start
 
@@ -177,7 +178,7 @@ Provider internals are documented in [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KO
 
 ## Scope
 
-This project targets desktop Windows, Linux, and macOS source builds. rofi/dmenu integration, Android/Termux and iSH adapters, intro skipping, and system-journal logging are not currently included.
+This project targets Windows, Linux, tested macOS source builds, and tested Termux source builds. iSH adapters, rofi/dmenu integration, intro skipping, and system-journal logging are not currently included.
 
 ## License
 

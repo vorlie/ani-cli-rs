@@ -1,6 +1,6 @@
 # Installation
 
-Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64 and macOS users build from source.
+Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64, tested macOS, and tested Termux users build from source.
 
 ## Windows: portable installation
 
@@ -76,7 +76,7 @@ The local `cargo release-linux-arm64` alias is intended for contributors with a 
 
 ## macOS
 
-No official macOS release assets are provided. Install the Rust toolchain and build locally:
+No official macOS release assets are provided. The source build and automatic IINA selection have been tested. Install the Rust toolchain and build locally:
 
 ```sh
 git clone https://github.com/vorlie/ani-cli-rs.git
@@ -88,7 +88,24 @@ The binary is placed at `target/release/ani-cli-rs`. Copy it to a directory on y
 
 IINA is the default player on macOS. Install it with `brew install --cask iina` and ensure its `iina` command is on `PATH`.
 
-## Build from source on any supported desktop
+## Android with Termux
+
+Termux source builds are tested, but no Android release binary is published. Install Termux and the matching Termux:API companion from the same trusted source, then run:
+
+```sh
+pkg update
+pkg install rust termux-api
+git clone https://github.com/vorlie/ani-cli-rs.git
+cd ani-cli-rs
+cargo build --release --locked
+install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
+```
+
+Install the Android mpv app for default playback, or install Android VLC and pass `--vlc`. Do not use `pkg install vlc` for this integration: that installs a terminal VLC build rather than the Android application.
+
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
+
+## Build from source on any supported platform
 
 Install a current stable Rust toolchain, then:
 

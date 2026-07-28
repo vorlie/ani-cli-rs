@@ -7,7 +7,7 @@ ani-cli-rs uses command-line options for one-off choices and environment variabl
 | Variable | Purpose |
 |---|---|
 | `ANI_CLI_MODE` | Default translation mode: `sub` or `dub` |
-| `ANI_CLI_PLAYER` | Default mpv-compatible executable path |
+| `ANI_CLI_PLAYER` | Desktop player executable, or Android activity-launcher path in Termux |
 | `ANI_CLI_DOWNLOAD_DIR` | Compatibility-mode download directory |
 | `ANI_CLI_QUALITY` | Default quality (`best`, `worst`, or resolution) |
 | `ANI_CLI_HIST_DIR` | Directory containing the `ani-hsts` history file |
