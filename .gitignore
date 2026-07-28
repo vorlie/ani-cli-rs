@@ -15,6 +15,7 @@ Thumbs.db
 aniplay-allanime-debug-*.json
 .env
 .env.*
+logs/
 
 # Local VHS showcase artifacts
 showcase/output/
