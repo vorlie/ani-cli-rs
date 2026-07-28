@@ -79,7 +79,7 @@ The scripts verify release archives against their published SHA-256 checksums an
 
 - Linux and Windows: [mpv](https://mpv.io/) for default playback
 - macOS: [IINA](https://iina.io/) for tested out-of-the-box playback (`brew install --cask iina`)
-- Termux: an Android HLS-capable video player such as [mpv-android](https://github.com/mpv-android/mpv-android) or VLC
+- Termux: an Android HLS-capable video player; mpv-android, VLC, Amnis, and Samsung Video Player are device-tested
 - Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files

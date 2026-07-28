@@ -148,7 +148,7 @@ Protected HLS is served through a loopback relay owned by the running ani-cli-rs
 
 ## Termux video plays without external subtitles
 
-Open the Android player's subtitle menu and select the provider track. ani-cli-rs exposes separate provider subtitles as standard HLS subtitle renditions, but enabling and rendering them remains player-dependent. mpv-android and VLC are the primary targets; Samsung Video Player and other third-party players may ignore optional HLS subtitles. Burned-in subtitles are unaffected.
+Open the Android player's subtitle menu and select the provider track. ani-cli-rs exposes separate provider subtitles as standard HLS subtitle renditions. Device testing confirmed them with mpv-android, VLC, Amnis, and Samsung Video Player, but behavior can still differ between Android versions and player builds. Burned-in subtitles are unaffected.
 
 If a player reports a 30-minute subtitle rendition for an unusual movie or special, the provider subtitle could not be parsed for its final cue time and ani-cli-rs used its bounded fallback duration. Include the provider name, title, episode, and sanitized `links --json` output in a bug report.
 
