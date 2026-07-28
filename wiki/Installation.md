@@ -90,11 +90,11 @@ IINA is the default player on macOS. Install it with `brew install --cask iina` 
 
 ## Android with Termux
 
-Termux source builds are tested, but no Android release binary is published. Install Termux and the matching Termux:API companion from the same trusted source, then run:
+Termux source builds are tested, but no Android release binary is published. Install a current Termux build from a trusted source, then run:
 
 ```sh
 pkg update
-pkg install rust termux-api
+pkg install rust
 git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
@@ -103,7 +103,7 @@ install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
 
 Install the Android mpv app for default playback, or install Android VLC and pass `--vlc`. Do not use `pkg install vlc` for this integration: that installs a terminal VLC build rather than the Android application.
 
-ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. If the explicit activity bridge is incompatible with the installed Termux app, it falls back to `termux-open-url`; Android may then show an application chooser or use the configured default URL handler. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
 
 ## Build from source on any supported platform
 

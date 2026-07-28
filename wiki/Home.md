@@ -24,7 +24,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 | Linux x86-64 | Yes | Yes | Official release uses musl for broad distribution compatibility |
 | Linux ARM64 | No | Yes | Source build only; not device-tested by the maintainer |
 | macOS Intel/Apple Silicon | No | Tested | Build locally; IINA is selected automatically |
-| Android/Termux | No | Tested | Build locally; launches Android mpv or VLC through Termux:API |
+| Android/Termux | No | Tested | Build locally; launches Android mpv or VLC through Termux intents |
 | iSH | No | Not supported | No iOS player adapter |
 
 ## External programs
@@ -32,7 +32,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 The scraper itself does not require curl, sed, OpenSSL, Botan, or fzf. Some actions use programs discovered through `PATH`:
 
 - `mpv` for default desktop playback;
-- Android mpv through Termux:API on Android;
+- Android mpv through Termux intents on Android;
 - VLC with `--vlc`;
 - Syncplay with `--syncplay`;
 - `aria2c` for faster direct and delegated HLS downloads;

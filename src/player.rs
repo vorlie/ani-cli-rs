@@ -214,18 +214,39 @@ impl Player {
             ));
         }
 
-        let status = Command::new(&self.options.executable)
+        let launch_result = Command::new(&self.options.executable)
             .args(self.command_args_inner(stream, title, true))
             .status()
-            .await
-            .map_err(|error| android_launcher_error(&self.options.executable, error))?;
-        let code = status.code().unwrap_or(1);
-        if !status.success() {
-            return Err(AniError::Player(format!(
-                "Android activity launcher {} exited with {code}; install termux-api and an Android player app",
-                self.options.executable.display()
-            )));
-        }
+            .await;
+        let code = match launch_result {
+            Ok(status) if status.success() => status.code().unwrap_or(0),
+            result => {
+                let primary_error = match result {
+                    Ok(status) => format!(
+                        "Android activity launcher {} exited with {}",
+                        self.options.executable.display(),
+                        status.code().unwrap_or(1)
+                    ),
+                    Err(error) => format!(
+                        "could not launch Android player through {}: {error}",
+                        self.options.executable.display()
+                    ),
+                };
+                match launch_android_url_fallback(&self.options.executable, &stream.url).await {
+                    Ok(code) => {
+                        eprintln!(
+                            "warning: {primary_error}; opened the stream through Android's default URL handler instead"
+                        );
+                        code
+                    }
+                    Err(fallback_error) => {
+                        return Err(AniError::Player(format!(
+                            "{primary_error}; {fallback_error}"
+                        )));
+                    }
+                }
+            }
+        };
 
         if terminal {
             wait_for_android_player().await?;
@@ -268,11 +289,40 @@ fn find_in_path(executable: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-fn android_launcher_error(executable: &Path, error: io::Error) -> AniError {
-    AniError::Player(format!(
-        "could not launch Android player through {}: {error}; install the Termux:API app and run `pkg install termux-api`",
-        executable.display()
-    ))
+async fn launch_android_url_fallback(
+    executable: &Path,
+    url: &str,
+) -> std::result::Result<i32, String> {
+    if !is_termux_activity_launcher(executable) {
+        return Err(
+            "the configured custom launcher failed and cannot use the automatic Termux fallback"
+                .into(),
+        );
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let opener = find_in_path("termux-open-url", &path).ok_or_else(|| {
+        "termux-open-url is unavailable; install or update the termux-tools package".to_string()
+    })?;
+    let status = Command::new(&opener)
+        .arg(url)
+        .status()
+        .await
+        .map_err(|error| format!("could not run {}: {error}", opener.display()))?;
+    if !status.success() {
+        return Err(format!(
+            "{} exited with {}",
+            opener.display(),
+            status.code().unwrap_or(1)
+        ));
+    }
+    Ok(status.code().unwrap_or(0))
+}
+
+fn is_termux_activity_launcher(executable: &Path) -> bool {
+    executable
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, "termux-am-starter" | "termux-am" | "am"))
 }
 
 async fn wait_for_android_player() -> Result<()> {
@@ -509,6 +559,18 @@ mod tests {
             Some(directory.path().join("termux-am"))
         );
         assert_eq!(find_in_path("termux-am-starter", &path), None);
+    }
+
+    #[test]
+    fn only_termux_activity_launchers_allow_the_url_opener_fallback() {
+        assert!(is_termux_activity_launcher(Path::new("termux-am-starter")));
+        assert!(is_termux_activity_launcher(Path::new(
+            "/data/data/com.termux/files/usr/bin/termux-am"
+        )));
+        assert!(is_termux_activity_launcher(Path::new("am")));
+        assert!(!is_termux_activity_launcher(Path::new(
+            "/data/local/tmp/custom-launcher"
+        )));
     }
 
     #[test]

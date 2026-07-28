@@ -64,12 +64,12 @@ The scripts verify release archives against their published SHA-256 checksums an
 
 - Linux and Windows: [mpv](https://mpv.io/) for default playback
 - macOS: [IINA](https://iina.io/) for tested out-of-the-box playback (`brew install --cask iina`)
-- Termux: `termux-api` plus the Android [mpv](https://github.com/mpv-android/mpv-android) app; Android VLC is available with `--vlc`
+- Termux: the Android [mpv](https://github.com/mpv-android/mpv-android) app; Android VLC is available with `--vlc`
 - Optional: VLC or Syncplay for alternate playback
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
-Desktop programs must be available through `PATH`. Termux launches Android player apps through `termux-am-starter`, `termux-am`, or `am`. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
+Desktop programs must be available through `PATH`. Termux first targets Android player apps through `termux-am-starter`, `termux-am`, or `am`. If that activity bridge is unavailable, ani-cli-rs falls back to `termux-open-url` and Android's default URL handler. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
 
 ## Quick start
 

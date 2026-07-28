@@ -8,7 +8,7 @@ host_arch=$(uname -m)
 
 case "${TERMUX_VERSION:-}:${PREFIX:-}" in
     ?*:*|*:*com.termux*)
-        echo "Official Termux binaries are not provided. Install rust and termux-api, then build ani-cli-rs from source." >&2
+        echo "Official Termux binaries are not provided. Install rust, then build ani-cli-rs from source." >&2
         exit 2
         ;;
 esac

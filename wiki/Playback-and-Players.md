@@ -41,13 +41,13 @@ VLC receives `--play-and-exit`, the media title, and `--http-referrer` when requ
 
 On Android, ani-cli-rs launches the installed Android player through an explicit `VIEW` intent. Android mpv (`is.xyz.mpv`) is the default; `--vlc` targets the Android VLC application instead of a terminal VLC executable.
 
-Install the activity bridge in Termux:
+Ensure the standard Termux tools are installed:
 
 ```sh
-pkg install termux-api
+pkg install termux-tools
 ```
 
-The matching Termux:API companion application may also be required. ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`. If none can be started, install or repair Termux:API rather than installing `vlc` inside Termux.
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am` and first attempts to target the requested Android player directly. Some Termux app/package combinations expose a socket-backed `termux-am` that cannot connect. In that case ani-cli-rs automatically uses `termux-open-url`, which opens the stream through Android's default URL handler. Android may show an application chooser the first time.
 
 HLS playback is routed through ani-cli-rs's loopback relay on Android. After launching the player, the terminal intentionally waits:
 

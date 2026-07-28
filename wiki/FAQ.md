@@ -52,7 +52,7 @@ No. Linux ARM64 can be built from source, and a Cargo alias exists for contribut
 
 ## Does Termux work?
 
-Termux source builds are tested. ani-cli-rs launches the installed Android mpv app by default or Android VLC with `--vlc`; install `termux-api` to provide the activity bridge. A terminal VLC installed with `pkg install vlc` is not the Android application and is intentionally not selected.
+Termux source builds are tested. ani-cli-rs launches the installed Android mpv app by default or Android VLC with `--vlc`. If the explicit activity bridge is unavailable, it falls back to `termux-open-url` and Android's default URL handler. A terminal VLC installed with `pkg install vlc` is not the Android application and is intentionally not selected.
 
 ## Why does antivirus flag the Windows executable?
 

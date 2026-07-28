@@ -133,14 +133,14 @@ command -v mpv vlc syncplay aria2c yt-dlp ffmpeg
 
 ## Termux opens terminal VLC or cannot find an Android player
 
-`pkg install vlc` installs a terminal program and does not expose the separately installed Android VLC application. Install `termux-api` and an Android player app instead:
+`pkg install vlc` installs a terminal program and does not expose the separately installed Android VLC application. Install an Android player app and ensure the standard Termux tools are current:
 
 ```sh
-pkg install termux-api
-command -v termux-am-starter termux-am am
+pkg install termux-tools
+command -v termux-am-starter termux-am am termux-open-url
 ```
 
-Run `ani-cli-rs "title"` for Android mpv or `ani-cli-rs --vlc "title"` for Android VLC. If the activity launcher is installed at a custom path, set `ANI_CLI_PLAYER` to that launcher. For relayed HLS, keep Termux running and press Enter only after playback has ended.
+Run `ani-cli-rs "title"` for Android mpv or `ani-cli-rs --vlc "title"` for Android VLC. If the explicit activity launcher reports a missing socket, ani-cli-rs falls back to `termux-open-url`; select the desired Android player when prompted. If the activity launcher is installed at a custom path, set `ANI_CLI_PLAYER` to that launcher. For relayed HLS, keep Termux running and press Enter only after playback has ended.
 
 Install only the tools needed by your workflow. Direct downloads can fall back to Rust; HLS requires yt-dlp or FFmpeg.
 
