@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process::Stdio};
+use std::{
+    io::{self, IsTerminal, Write},
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use tokio::process::Command;
 
@@ -9,6 +13,8 @@ pub enum PlayerKind {
     Mpv,
     Iina,
     Vlc,
+    AndroidMpv,
+    AndroidVlc,
     Syncplay,
     Custom,
 }
@@ -23,7 +29,9 @@ pub struct PlayerOptions {
 
 impl PlayerOptions {
     pub fn default_player() -> Self {
-        if cfg!(target_os = "macos") {
+        if cfg!(target_os = "android") {
+            Self::default_android_mpv()
+        } else if cfg!(target_os = "macos") {
             Self::default_iina()
         } else {
             Self::default_mpv()
@@ -50,6 +58,15 @@ impl PlayerOptions {
             executable,
             kind: PlayerKind::Iina,
             no_detach: env_bool("ANI_CLI_NO_DETACH"),
+            exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
+        }
+    }
+
+    pub fn default_android_mpv() -> Self {
+        Self {
+            executable: android_intent_launcher(),
+            kind: PlayerKind::AndroidMpv,
+            no_detach: true,
             exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
         }
     }
@@ -101,6 +118,14 @@ impl Player {
                 args.push(stream.url.clone());
                 args
             }
+            PlayerKind::AndroidMpv => {
+                android_intent_args("is.xyz.mpv/.MPVActivity", &stream.url, title)
+            }
+            PlayerKind::AndroidVlc => android_intent_args(
+                "org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity",
+                &stream.url,
+                title,
+            ),
             PlayerKind::Syncplay => {
                 let mut args = vec![
                     stream.url.clone(),
@@ -122,7 +147,7 @@ impl Player {
     }
 
     pub async fn play(&self, stream: &StreamLink, title: &str) -> Result<Option<i32>> {
-        if requires_hls_relay(stream) {
+        if requires_hls_relay(stream) || (self.is_android_player() && stream.hls) {
             let (_relay, local) = relay_stream(stream).await?;
             return self.play_inner(&local, title, true).await;
         }
@@ -135,6 +160,9 @@ impl Player {
         title: &str,
         force_attached: bool,
     ) -> Result<Option<i32>> {
+        if self.is_android_player() {
+            return self.play_android(stream, title, force_attached).await;
+        }
         let mut command = Command::new(&self.options.executable);
         let attached = self.options.no_detach || force_attached;
         command.args(self.command_args_inner(stream, title, attached));
@@ -164,6 +192,103 @@ impl Player {
             Ok(None)
         }
     }
+
+    fn is_android_player(&self) -> bool {
+        matches!(
+            self.options.kind,
+            PlayerKind::AndroidMpv | PlayerKind::AndroidVlc
+        )
+    }
+
+    async fn play_android(
+        &self,
+        stream: &StreamLink,
+        title: &str,
+        relay_active: bool,
+    ) -> Result<Option<i32>> {
+        let terminal = io::stdin().is_terminal();
+        if relay_active && !terminal {
+            return Err(AniError::Player(
+                "Android HLS playback requires an interactive Termux terminal so the local relay can remain active"
+                    .into(),
+            ));
+        }
+
+        let status = Command::new(&self.options.executable)
+            .args(self.command_args_inner(stream, title, true))
+            .status()
+            .await
+            .map_err(|error| android_launcher_error(&self.options.executable, error))?;
+        let code = status.code().unwrap_or(1);
+        if !status.success() {
+            return Err(AniError::Player(format!(
+                "Android activity launcher {} exited with {code}; install termux-api and an Android player app",
+                self.options.executable.display()
+            )));
+        }
+
+        if terminal {
+            wait_for_android_player().await?;
+        }
+        Ok(Some(code))
+    }
+}
+
+fn android_intent_args(component: &str, url: &str, title: &str) -> Vec<String> {
+    vec![
+        "start".into(),
+        "--user".into(),
+        "0".into(),
+        "-a".into(),
+        "android.intent.action.VIEW".into(),
+        "-d".into(),
+        url.into(),
+        "-n".into(),
+        component.into(),
+        "--es".into(),
+        "title".into(),
+        title.into(),
+    ]
+}
+
+fn android_intent_launcher() -> PathBuf {
+    if let Some(executable) = std::env::var_os("ANI_CLI_PLAYER") {
+        return PathBuf::from(executable);
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    ["termux-am-starter", "termux-am", "am"]
+        .iter()
+        .find_map(|name| find_in_path(name, &path))
+        .unwrap_or_else(|| PathBuf::from("termux-am-starter"))
+}
+
+fn find_in_path(executable: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(path)
+        .map(|directory| directory.join(executable))
+        .find(|candidate| candidate.is_file())
+}
+
+fn android_launcher_error(executable: &Path, error: io::Error) -> AniError {
+    AniError::Player(format!(
+        "could not launch Android player through {}: {error}; install the Termux:API app and run `pkg install termux-api`",
+        executable.display()
+    ))
+}
+
+async fn wait_for_android_player() -> Result<()> {
+    tokio::task::spawn_blocking(|| {
+        println!(
+            "Opened the Android player. Return to Termux and press Enter after playback ends."
+        );
+        print!("Waiting for Android player... ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        Ok::<(), io::Error>(())
+    })
+    .await
+    .map_err(|error| AniError::Player(format!("Android playback prompt failed: {error}")))??;
+    Ok(())
 }
 
 fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
@@ -312,9 +437,86 @@ mod tests {
     }
 
     #[test]
+    fn android_mpv_arguments_use_an_explicit_view_intent() {
+        let player = Player::new(PlayerOptions {
+            executable: "termux-am-starter".into(),
+            kind: PlayerKind::AndroidMpv,
+            no_detach: true,
+            exit_after_play: false,
+        });
+        let stream = StreamLink {
+            url: "http://127.0.0.1:43123/stream-token".into(),
+            resolution: "1080p".into(),
+            hls: true,
+            provider: "Anikoto".into(),
+            downloadable: true,
+            headers: RequestHeaders::default(),
+            subtitles: vec![],
+        };
+
+        assert_eq!(
+            player.command_args(&stream, "Anime Episode 1"),
+            vec![
+                "start",
+                "--user",
+                "0",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                "http://127.0.0.1:43123/stream-token",
+                "-n",
+                "is.xyz.mpv/.MPVActivity",
+                "--es",
+                "title",
+                "Anime Episode 1",
+            ]
+        );
+    }
+
+    #[test]
+    fn android_vlc_arguments_target_the_android_app_not_terminal_vlc() {
+        let player = Player::new(PlayerOptions {
+            executable: "am".into(),
+            kind: PlayerKind::AndroidVlc,
+            no_detach: true,
+            exit_after_play: false,
+        });
+        let stream = StreamLink {
+            url: "https://media.example/episode.m3u8".into(),
+            resolution: "720p".into(),
+            hls: true,
+            provider: "Anikoto".into(),
+            downloadable: true,
+            headers: RequestHeaders::default(),
+            subtitles: vec![],
+        };
+
+        assert!(
+            player.command_args(&stream, "Episode").contains(
+                &"org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity".into()
+            )
+        );
+    }
+
+    #[test]
+    fn android_launcher_lookup_prefers_the_first_available_candidate() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("termux-am"), "").unwrap();
+        let path = std::env::join_paths([directory.path()]).unwrap();
+
+        assert_eq!(
+            find_in_path("termux-am", &path),
+            Some(directory.path().join("termux-am"))
+        );
+        assert_eq!(find_in_path("termux-am-starter", &path), None);
+    }
+
+    #[test]
     fn platform_default_selects_expected_player() {
         let options = PlayerOptions::default_player();
-        if cfg!(target_os = "macos") {
+        if cfg!(target_os = "android") {
+            assert_eq!(options.kind, PlayerKind::AndroidMpv);
+        } else if cfg!(target_os = "macos") {
             assert_eq!(options.kind, PlayerKind::Iina);
             if std::env::var_os("ANI_CLI_PLAYER").is_none() {
                 assert_eq!(options.executable, PathBuf::from("iina"));

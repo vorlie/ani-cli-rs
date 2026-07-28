@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 mod updater;
 
-const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS and mpv elsewhere by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
+const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS, Android mpv in Termux, and mpv on other desktops by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. macOS users can build from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. Tested macOS and Termux builds are compiled from source.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -50,7 +50,7 @@ struct Cli {
     /// Choose best, worst, or a resolution such as 1080p or 720p.
     #[arg(short = 'q', long, env = "ANI_CLI_QUALITY", default_value = "best")]
     quality: String,
-    /// Use VLC instead of the default mpv/iina player.
+    /// Use VLC instead of the default mpv/iina/Android mpv player.
     #[arg(short = 'v', long)]
     vlc: bool,
     /// Select one episode, whitespace-separated episodes, or a range such as 2-5.
@@ -921,8 +921,7 @@ fn build_legacy_player(cli: &Cli) -> Player {
     options.no_detach |= cli.no_detach;
     options.exit_after_play |= cli.exit_after_play;
     if cli.vlc {
-        options.executable = PathBuf::from(if cfg!(windows) { "vlc.exe" } else { "vlc" });
-        options.kind = PlayerKind::Vlc;
+        select_vlc_player(&mut options, cfg!(target_os = "android"), cfg!(windows));
     }
     if cli.syncplay {
         options.executable = PathBuf::from(if cfg!(windows) {
@@ -933,6 +932,15 @@ fn build_legacy_player(cli: &Cli) -> Player {
         options.kind = PlayerKind::Syncplay;
     }
     Player::new(options)
+}
+
+fn select_vlc_player(options: &mut PlayerOptions, android: bool, windows: bool) {
+    if android {
+        options.kind = PlayerKind::AndroidVlc;
+        return;
+    }
+    options.executable = PathBuf::from(if windows { "vlc.exe" } else { "vlc" });
+    options.kind = PlayerKind::Vlc;
 }
 
 struct PlaybackContext<'a> {
@@ -1311,6 +1319,31 @@ mod tests {
 
         assert!(cli.update);
         assert_eq!(cli.query, ["frieren"]);
+    }
+
+    #[test]
+    fn vlc_selection_uses_the_android_activity_launcher_on_termux() {
+        let mut options = PlayerOptions {
+            executable: "termux-am-starter".into(),
+            kind: PlayerKind::AndroidMpv,
+            no_detach: true,
+            exit_after_play: false,
+        };
+
+        select_vlc_player(&mut options, true, false);
+
+        assert_eq!(options.kind, PlayerKind::AndroidVlc);
+        assert_eq!(options.executable, PathBuf::from("termux-am-starter"));
+    }
+
+    #[test]
+    fn vlc_selection_keeps_desktop_executable_behavior() {
+        let mut options = PlayerOptions::default_mpv();
+
+        select_vlc_player(&mut options, false, true);
+
+        assert_eq!(options.kind, PlayerKind::Vlc);
+        assert_eq!(options.executable, PathBuf::from("vlc.exe"));
     }
 
     #[test]
