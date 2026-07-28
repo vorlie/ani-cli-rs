@@ -103,7 +103,7 @@ install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
 
 Install the Android mpv app for default playback, or install Android VLC and pass `--vlc`. Do not use `pkg install vlc` for this integration: that installs a terminal VLC build rather than the Android application.
 
-ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. If the explicit activity bridge is incompatible with the installed Termux app, it falls back to `termux-open-url`; Android may then show an application chooser or use the configured default URL handler. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
+ani-cli-rs searches for `termux-am-starter`, `termux-am`, and `am`, in that order. If the explicit activity bridge is incompatible with the installed Termux app, it falls back to `termux-open` with the stream's media type, then `termux-open-url`; Android may then show an application chooser or use the configured default handler. `ANI_CLI_PLAYER` can override the activity-launcher executable if a device requires a different path.
 
 ## Build from source on any supported platform
 

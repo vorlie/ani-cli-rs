@@ -232,7 +232,9 @@ impl Player {
                         self.options.executable.display()
                     ),
                 };
-                match launch_android_url_fallback(&self.options.executable, &stream.url).await {
+                match launch_android_url_fallback(&self.options.executable, &stream.url, stream.hls)
+                    .await
+                {
                     Ok(code) => {
                         eprintln!(
                             "warning: {primary_error}; opened the stream through Android's default URL handler instead"
@@ -292,6 +294,7 @@ fn find_in_path(executable: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
 async fn launch_android_url_fallback(
     executable: &Path,
     url: &str,
+    hls: bool,
 ) -> std::result::Result<i32, String> {
     if !is_termux_activity_launcher(executable) {
         return Err(
@@ -300,8 +303,33 @@ async fn launch_android_url_fallback(
         );
     }
     let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut open_error = None;
+    if let Some(opener) = find_in_path("termux-open", &path) {
+        let status = Command::new(&opener)
+            .args(["--view", "--content-type", android_media_type(hls), url])
+            .status()
+            .await;
+        match status {
+            Ok(status) if status.success() => return Ok(status.code().unwrap_or(0)),
+            Ok(status) => {
+                open_error = Some(format!(
+                    "{} exited with {}",
+                    opener.display(),
+                    status.code().unwrap_or(1)
+                ));
+            }
+            Err(error) => {
+                open_error = Some(format!("could not run {}: {error}", opener.display()));
+            }
+        }
+    }
     let opener = find_in_path("termux-open-url", &path).ok_or_else(|| {
-        "termux-open-url is unavailable; install or update the termux-tools package".to_string()
+        let prefix = open_error
+            .map(|error| format!("{error}; "))
+            .unwrap_or_default();
+        format!(
+            "{prefix}termux-open-url is unavailable; install or update the termux-tools package"
+        )
     })?;
     let status = Command::new(&opener)
         .arg(url)
@@ -316,6 +344,14 @@ async fn launch_android_url_fallback(
         ));
     }
     Ok(status.code().unwrap_or(0))
+}
+
+fn android_media_type(hls: bool) -> &'static str {
+    if hls {
+        "application/vnd.apple.mpegurl"
+    } else {
+        "video/mp4"
+    }
 }
 
 fn is_termux_activity_launcher(executable: &Path) -> bool {
@@ -571,6 +607,12 @@ mod tests {
         assert!(!is_termux_activity_launcher(Path::new(
             "/data/local/tmp/custom-launcher"
         )));
+    }
+
+    #[test]
+    fn android_fallback_uses_specific_media_types() {
+        assert_eq!(android_media_type(true), "application/vnd.apple.mpegurl");
+        assert_eq!(android_media_type(false), "video/mp4");
     }
 
     #[test]

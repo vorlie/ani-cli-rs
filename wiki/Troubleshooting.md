@@ -137,10 +137,10 @@ command -v mpv vlc syncplay aria2c yt-dlp ffmpeg
 
 ```sh
 pkg install termux-tools
-command -v termux-am-starter termux-am am termux-open-url
+command -v termux-am-starter termux-am am termux-open termux-open-url
 ```
 
-Run `ani-cli-rs "title"` for Android mpv or `ani-cli-rs --vlc "title"` for Android VLC. If the explicit activity launcher reports a missing socket, ani-cli-rs falls back to `termux-open-url`; select the desired Android player when prompted. If the activity launcher is installed at a custom path, set `ANI_CLI_PLAYER` to that launcher. For relayed HLS, keep Termux running and press Enter only after playback has ended.
+Run `ani-cli-rs "title"` for Android mpv or `ani-cli-rs --vlc "title"` for Android VLC. If the explicit activity launcher reports a missing socket, ani-cli-rs uses media-typed `termux-open` before falling back to `termux-open-url`. If Android still opens a browser, clear that browser's default link association and select an installed video player. If the activity launcher is installed at a custom path, set `ANI_CLI_PLAYER` to that launcher. For relayed HLS, keep Termux running and press Enter only after playback has ended.
 
 Install only the tools needed by your workflow. Direct downloads can fall back to Rust; HLS requires yt-dlp or FFmpeg.
 
