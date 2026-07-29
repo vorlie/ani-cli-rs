@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Contributing
 
 Bug fixes, provider compatibility updates, tests, documentation, and focused feature proposals are welcome.
@@ -55,7 +50,7 @@ Avoid mixing formatting, unrelated cleanup, generated artifacts, and the actual 
 
 ## Scraper changes
 
-Read [Provider Architecture](Provider-Architecture) and the relevant source-adjacent provider document first.
+Read [Provider Architecture](architecture.md) and the relevant source-adjacent provider document first.
 
 - Include sanitized response fixtures.
 - Preserve partial-provider success.

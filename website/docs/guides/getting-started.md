@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Getting Started
 
 ## Play an anime interactively
@@ -71,7 +66,7 @@ Use Space to toggle entries and Enter to confirm.
 ani-cli-rs --download "anime title"
 ```
 
-Select the anime/season and episodes. Version 0.6.0 and newer preflight every selected episode before starting the first transfer. See [Downloads](Downloads).
+Select the anime/season and episodes. Version 0.6.0 and newer preflight every selected episode before starting the first transfer. See [Downloads](downloads.md).
 
 ## Continue from history
 

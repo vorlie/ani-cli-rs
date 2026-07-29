@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Configuration and History
 
 ani-cli-rs uses command-line options for one-off choices and environment variables for defaults. It does not currently maintain a general application configuration file.

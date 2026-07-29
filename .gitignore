@@ -16,6 +16,7 @@ aniplay-allanime-debug-*.json
 .env
 .env.*
 logs/
+.venv/
 
 # Local VHS showcase artifacts
 showcase/output/

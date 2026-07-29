@@ -1,9 +1,4 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
-# ani-cli-rs Wiki
+# ani-cli-rs Documentation
 
 `ani-cli-rs` is a cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli). It searches two independent Anikoto catalogs, resolves native episode sources, launches desktop or Android media players, downloads direct media and HLS streams, and preserves the familiar ani-cli command-line workflow.
 
@@ -11,14 +6,14 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 
 ## Start here
 
-- **New user:** [Installation](Installation) → [Getting Started](Getting-Started)
-- **Looking for an option:** [CLI Reference](CLI-Reference)
-- **Playback setup:** [Playback and Players](Playback-and-Players)
-- **Downloading:** [Downloads](Downloads)
-- **Something failed:** [Troubleshooting](Troubleshooting)
-- **Checking a release:** [Security and Privacy](Security-and-Privacy)
-- **Building or packaging:** [Building and Releasing](Building-and-Releasing)
-- **Working on a provider:** [Provider Architecture](Provider-Architecture), the [Anikoto API/KotoCDN reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-KOTOCDN.md), and the [Anikoto.cz reference](https://github.com/vorlie/ani-cli-rs/blob/master/docs/ANIKOTO-CZ.md)
+- **New user:** [Installation](guides/installation.md) → [Getting Started](guides/getting-started.md)
+- **Looking for an option:** [CLI Reference](reference/cli.md)
+- **Playback setup:** [Playback and Players](guides/playback-and-players.md)
+- **Downloading:** [Downloads](guides/downloads.md)
+- **Something failed:** [Troubleshooting](support/troubleshooting.md)
+- **Checking a release:** [Security and Privacy](development/security.md)
+- **Building or packaging:** [Building and Releasing](development/building.md)
+- **Working on a provider:** [Provider Architecture](development/architecture.md), [Anikoto API/KotoCDN](development/anikoto-kotocdn.md), and [Anikoto.cz](development/anikoto-cz.md)
 
 ## Platform support
 
@@ -43,7 +38,7 @@ The scraper itself does not require curl, sed, OpenSSL, Botan, or fzf. Some acti
 - `aria2c` for faster direct and delegated HLS downloads;
 - `yt-dlp` and FFmpeg for HLS downloads.
 
-See [Playback and Players](Playback-and-Players) and [Downloads](Downloads) for exact fallback behavior.
+See [Playback and Players](guides/playback-and-players.md) and [Downloads](guides/downloads.md) for exact fallback behavior.
 
 ## Important upstream limitation
 

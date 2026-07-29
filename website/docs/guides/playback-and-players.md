@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Playback and Players
 
 Anikoto API/MegaPlay is the default catalog. Select the independent Anikoto.cz catalog with `--provider anikoto2` or `ANI_CLI_PROVIDER=anikoto2`. For KotoCDN HLS from either provider, ani-cli-rs starts a loopback-only relay and remains attached to the player until it exits; this translates confirmed PNG-wrapped transport-stream segments.

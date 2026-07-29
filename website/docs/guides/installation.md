@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Installation
 
 Official releases are published at <https://github.com/vorlie/ani-cli-rs/releases>. Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64, tested macOS, and tested Termux users build from source.
@@ -152,4 +147,4 @@ ani-cli-rs --version
 ani-cli-rs --help
 ```
 
-If the command is not found, see [Troubleshooting: installed but not found](Troubleshooting#installed-but-command-not-found).
+If the command is not found, see [Troubleshooting: installed but not found](../support/troubleshooting.md#installed-but-command-not-found).
