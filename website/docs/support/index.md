@@ -34,4 +34,4 @@ When reporting a bug, please include:
 ---
 
 ### Community & Assistance
-For general questions or community help, feel free to join our [Discord](https://discord.gg/your-link-here) (if applicable) or participate in [GitHub Discussions](https://github.com/vorlie/ani-cli-rs/discussions).
+For general questions or community help, feel free to join our [Discord](https://discord.gg/9SXX6ddpNR) (if applicable) or participate in [GitHub Discussions](https://github.com/vorlie/ani-cli-rs/discussions).
