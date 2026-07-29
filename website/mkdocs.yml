@@ -1,0 +1,63 @@
+site_name: ani-cli-rs
+site_description: Cross-platform Rust port of ani-cli with Anikoto providers
+site_author: vorlie
+repo_url: https://github.com/vorlie/ani-cli-rs
+edit_uri: edit/master/wiki/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Guides:
+    - Installation: guides/installation.md
+    - Getting Started: guides/getting-started.md
+    - Playback and Players: guides/playback-and-players.md
+    - Downloads: guides/downloads.md
+    - Configuration and History: guides/configuration.md
+  - Reference:
+    - CLI Reference: reference/cli.md
+  - FAQ: faq.md
+  - Support:
+    - Support Overview: support/index.md
+    - Troubleshooting: support/troubleshooting.md
+  - Development:
+    - Provider Architecture: development/architecture.md
+    - Anikoto API/KotoCDN: development/anikoto-kotocdn.md
+    - Anikoto.cz: development/anikoto-cz.md
+    - Security and Privacy: development/security.md
+    - Building and Releasing: development/building.md
+    - Contributing: development/contributing.md

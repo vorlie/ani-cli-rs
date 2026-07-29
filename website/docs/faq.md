@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Frequently Asked Questions
 
 ## Is this a fork of Bash ani-cli?
@@ -33,7 +28,7 @@ Both catalogs commonly model seasons as separate show entries rather than one sh
 
 ## Why does a download use `.part`?
 
-It marks incomplete/resumable media. The file is renamed to `.mp4` after successful completion. See [Downloads](Downloads#why-files-use-part).
+It marks incomplete/resumable media. The file is renamed to `.mp4` after successful completion. See [Downloads](guides/downloads.md#why-files-use-part).
 
 ## Can I disable `.part`?
 

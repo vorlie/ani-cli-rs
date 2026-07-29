@@ -17,8 +17,8 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 - [Scriptable commands](#scriptable-commands)
 - [Build and test](#build-and-test)
 - [Showcase generator](showcase/README.md)
-- [Troubleshooting](https://github.com/vorlie/ani-cli-rs/wiki/Troubleshooting)
-- [Complete documentation](https://github.com/vorlie/ani-cli-rs/wiki)
+- [Troubleshooting](https://vorlie.github.io/ani-cli-rs/support/troubleshooting/)
+- [Complete documentation](https://vorlie.github.io/ani-cli-rs/)
 - [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
 
 ## Features
@@ -75,7 +75,7 @@ install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
 
 Install an Android video player such as mpv-android or VLC from an Android app source. Do not use `pkg install vlc`: that package is a terminal VLC build, not the Android application used by this integration.
 
-The scripts verify release archives against their published SHA-256 checksums and install to the user-local `~/.local/bin` directory by default. See the [installation guide](https://github.com/vorlie/ani-cli-rs/wiki/Installation) for PATH help, custom locations, uninstalling, and source builds.
+The scripts verify release archives against their published SHA-256 checksums and install to the user-local `~/.local/bin` directory by default. See the [installation guide](https://vorlie.github.io/ani-cli-rs/guides/installation/) for PATH help, custom locations, uninstalling, and source builds.
 
 ## Requirements
 
@@ -86,7 +86,7 @@ The scripts verify release archives against their published SHA-256 checksums an
 - Optional: [aria2](https://aria2.github.io/) for faster parallel downloads
 - Optional: yt-dlp and FFmpeg for HLS downloads, fallbacks, and embedding provider subtitles into MP4 files
 
-Desktop programs must be available through `PATH`. On Termux, normal playback requests mpv-android and `--vlc` requests Android VLC when the explicit activity bridge works. If it does not, ani-cli-rs uses Android's media handler through `termux-open`; the chosen/default player then takes precedence over the CLI preference. See [Playback and Players](https://github.com/vorlie/ani-cli-rs/wiki/Playback-and-Players) and [Downloads](https://github.com/vorlie/ani-cli-rs/wiki/Downloads) for setup details.
+Desktop programs must be available through `PATH`. On Termux, normal playback requests mpv-android and `--vlc` requests Android VLC when the explicit activity bridge works. If it does not, ani-cli-rs uses Android's media handler through `termux-open`; the chosen/default player then takes precedence over the CLI preference. See [Playback and Players](https://vorlie.github.io/ani-cli-rs/guides/playback-and-players/) and [Downloads](https://vorlie.github.io/ani-cli-rs/guides/downloads/) for setup details.
 
 ## Quick start
 
@@ -150,7 +150,7 @@ Supported compatibility flags include:
     --exit-after-play      Skip the post-playback menu
 ```
 
-Run `ani-cli-rs --help` for the authoritative list. Environment variables and keyboard controls are documented in the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference).
+Run `ani-cli-rs --help` for the authoritative list. Environment variables and keyboard controls are documented in the [CLI reference](https://vorlie.github.io/ani-cli-rs/reference/cli/).
 
 ## Scriptable commands
 
@@ -172,13 +172,13 @@ Use `ani-cli-rs --download "anime title"` when you want interactive name, season
 
 Set `ANI_CLI_PROVIDER=anikoto2` to make Anikoto.cz the interactive/search default. The catalogs are intentionally not combined and playback never silently crosses between them.
 
-See the [CLI reference](https://github.com/vorlie/ani-cli-rs/wiki/CLI-Reference) for every command and JSON workflow.
+See the [CLI reference](https://vorlie.github.io/ani-cli-rs/reference/cli/) for every command and JSON workflow.
 
 ## Security and antivirus notices
 
 Official Windows binaries are currently unsigned and may trigger SmartScreen or heuristic antivirus warnings. ani-cli-rs performs network requests, starts media players/downloaders, and temporarily binds a loopback HLS relay for KotoCDN playback; those behaviors can produce misleading automated behavior classifications.
 
-Release installers verify published checksums. Users who prefer not to run prebuilt binaries can inspect the tagged source and build it with `cargo build --release --locked`. Read [Security and Privacy](https://github.com/vorlie/ani-cli-rs/wiki/Security-and-Privacy) for the full explanation and manual verification steps.
+Release installers verify published checksums. Users who prefer not to run prebuilt binaries can inspect the tagged source and build it with `cargo build --release --locked`. Read [Security and Privacy](https://vorlie.github.io/ani-cli-rs/development/security/) for the full explanation and manual verification steps.
 
 ## Build and test
 
@@ -194,11 +194,11 @@ cargo test
 
 On Windows with WSL available, `.\showcase\showcase.ps1` generates the deterministic terminal MP4, screenshots, and README GIF without contacting anime providers. See the [showcase guide](showcase/README.md).
 
-Target-specific Cargo aliases and release packaging are covered in [Building and Releasing](https://github.com/vorlie/ani-cli-rs/wiki/Building-and-Releasing).
+Target-specific Cargo aliases and release packaging are covered in [Building and Releasing](https://vorlie.github.io/ani-cli-rs/development/building/).
 
 ## Documentation
 
-The [project Wiki](https://github.com/vorlie/ani-cli-rs/wiki) contains the full user and contributor documentation. Its source is tracked in [`wiki/`](wiki/Home.md) so documentation changes can be reviewed with code changes.
+The full user and contributor documentation is published at <https://vorlie.github.io/ani-cli-rs/>. Its source is tracked in [`website/docs/`](website/docs/index.md) so documentation changes can be reviewed with code changes.
 
 Provider internals are documented in [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) and [`docs/ANIKOTO-CZ.md`](docs/ANIKOTO-CZ.md).
 

@@ -1,8 +1,3 @@
-
-> **⚠ This wiki is deprecated.**
-
-The GitHub Wiki is no longer maintained. Edit documentation under `website/docs/` instead. See [Migrating from the Wiki](Migrating-from-Wiki) for the migration guide and the new site URL.
-
 # Troubleshooting
 
 Start by identifying which stage failed:
@@ -161,7 +156,7 @@ Install only the tools needed by your workflow. Direct downloads can fall back t
 
 ## `.part` remains after a download
 
-The transfer did not finalize. Rerun the same command to resume where supported. Check free disk space, file permissions, antivirus quarantine, whether another program holds the final filename, and the final aria2/ani-cli-rs error. See [Downloads](Downloads#why-files-use-part).
+The transfer did not finalize. Rerun the same command to resume where supported. Check free disk space, file permissions, antivirus quarantine, whether another program holds the final filename, and the final aria2/ani-cli-rs error. See [Downloads](../guides/downloads.md#why-files-use-part).
 
 ## Debugging without leaking secrets
 
