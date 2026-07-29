@@ -103,8 +103,7 @@ impl Player {
                     args.push("--keep-running".into());
                 }
                 args.push(stream.url.clone());
-                args.push("--".into());
-                args.extend(mpv_options(stream, title, referer));
+                args.extend(iina_mpv_options(stream, title, referer));
                 args
             }
             PlayerKind::Vlc => {
@@ -408,6 +407,17 @@ fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
     args
 }
 
+fn iina_mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
+    mpv_options(stream, title, referer)
+        .into_iter()
+        .filter_map(|option| {
+            option
+                .strip_prefix("--")
+                .map(|option| format!("--mpv-{option}"))
+        })
+        .collect()
+}
+
 fn append_mpv_headers(args: &mut Vec<String>, stream: &StreamLink) {
     let mut headers = Vec::new();
     if let Some(origin) = &stream.headers.origin
@@ -470,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn iina_arguments_put_stream_before_raw_mpv_options() {
+    fn iina_arguments_put_stream_before_mpv_prefixed_options() {
         let player = Player::new(PlayerOptions {
             executable: "iina".into(),
             kind: PlayerKind::Iina,
@@ -500,13 +510,12 @@ mod tests {
             vec![
                 "--no-stdin",
                 "https://media/a.m3u8",
-                "--",
-                "--tls-verify=no",
-                "--force-media-title=Anime Episode 1",
-                "--referrer=https://ref.example",
-                "--http-header-fields=Origin: https://origin.example",
-                "--sub-file=https://media/subtitles.vtt",
-                "--slang=English",
+                "--mpv-tls-verify=no",
+                "--mpv-force-media-title=Anime Episode 1",
+                "--mpv-referrer=https://ref.example",
+                "--mpv-http-header-fields=Origin: https://origin.example",
+                "--mpv-sub-file=https://media/subtitles.vtt",
+                "--mpv-slang=English",
             ]
         );
     }
