@@ -1,0 +1,9 @@
+# Global owner for everything
+*       @vorlie
+
+# Cargo dependencies/metadata
+Cargo.toml  @vorlie
+Cargo.lock  @vorlie
+
+# Workflows
+.github/    @vorlie
