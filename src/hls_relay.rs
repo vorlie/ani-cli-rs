@@ -74,7 +74,36 @@ impl Drop for HlsRelay {
 }
 
 /// Starts a relay and returns a stream whose URL points at its loopback endpoint.
+///
+/// Subtitles are exposed both as plain sidecar URLs on the returned
+/// `StreamLink::subtitles` (used by desktop players via `--sub-file`) and as
+/// synthetic HLS subtitle renditions in the relayed master playlist. Android
+/// players only receive a single intent URL, so they rely on the HLS
+/// rendition to discover subtitles at all.
 pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)> {
+    relay_stream_inner(stream, true).await
+}
+
+/// Like [`relay_stream`], but never exposes subtitles as synthetic HLS
+/// subtitle renditions in the master playlist.
+///
+/// Wrapping a single, potentially very long, subtitle file as one oversized
+/// HLS media segment does not match how HLS clients expect WebVTT segments
+/// to be chunked (RFC 8216 section 3.5), and it produces unreliable cue
+/// timing in some HLS demuxers (see issue #18). Desktop players do not need
+/// this: they are launched with an explicit `--sub-file` argument that
+/// points directly at the relayed sidecar subtitle, which this function
+/// still populates on the returned `StreamLink::subtitles`.
+pub async fn relay_stream_without_hls_subtitles(
+    stream: &StreamLink,
+) -> Result<(HlsRelay, StreamLink)> {
+    relay_stream_inner(stream, false).await
+}
+
+async fn relay_stream_inner(
+    stream: &StreamLink,
+    expose_subtitles_in_hls: bool,
+) -> Result<(HlsRelay, StreamLink)> {
     if !stream.hls {
         return Err(AniError::Input("only HLS streams can be relayed".into()));
     }
@@ -120,7 +149,6 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
     let mut playlist_subtitles = Vec::with_capacity(local.subtitles.len());
     for track in &mut local.subtitles {
         let url = validate_upstream(&track.url)?;
-        let duration_seconds = probe_subtitle_duration(&state.client, &url, &stream.headers).await;
         let token = register(
             &state,
             url.clone(),
@@ -128,6 +156,11 @@ pub async fn relay_stream(stream: &StreamLink) -> Result<(HlsRelay, StreamLink)>
             ResourceKind::Subtitle,
         )?;
         track.url = local_url(address, &token);
+
+        if !expose_subtitles_in_hls {
+            continue;
+        }
+        let duration_seconds = probe_subtitle_duration(&state.client, &url, &stream.headers).await;
         let playlist_token = register(
             &state,
             url,
@@ -954,6 +987,73 @@ mod tests {
                 .unwrap(),
             "text/vtt"
         );
+    }
+
+    #[tokio::test]
+    async fn desktop_relay_omits_hls_subtitle_renditions_but_keeps_the_sidecar() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/media.m3u8"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/vnd.apple.mpegurl")
+                    .set_body_string("#EXTM3U\n#EXTINF:10,\nsegment.ts\n"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/subtitles.vtt"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/vtt")
+                    .set_body_string("WEBVTT\n\n00:00:01.000 --> 00:00:04.500\nHello\n"),
+            )
+            .mount(&server)
+            .await;
+
+        let stream = StreamLink {
+            url: format!("{}/media.m3u8", server.uri()),
+            resolution: "Auto".into(),
+            hls: true,
+            provider: "MegaPlay".into(),
+            downloadable: true,
+            headers: RequestHeaders::default(),
+            subtitles: vec![SubtitleTrack {
+                label: "English".into(),
+                url: format!("{}/subtitles.vtt", server.uri()),
+                default: true,
+            }],
+        };
+        let (_relay, local) = relay_stream_without_hls_subtitles(&stream).await.unwrap();
+        let client = reqwest::Client::new();
+        let master = client
+            .get(&local.url)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+
+        assert!(!master.contains("#EXT-X-MEDIA:TYPE=SUBTITLES"));
+        assert!(!master.contains("SUBTITLES=\"aniplay-subs\""));
+
+        // The direct sidecar subtitle URL is still relayed and reachable, so
+        // desktop players can load it via `--sub-file`.
+        assert_eq!(local.subtitles.len(), 1);
+        let subtitle = client.get(&local.subtitles[0].url).send().await.unwrap();
+        assert_eq!(subtitle.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            subtitle
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "text/vtt"
+        );
+        let body = subtitle.text().await.unwrap();
+        assert!(body.contains("Hello"));
     }
 
     #[tokio::test]
