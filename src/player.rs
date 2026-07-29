@@ -102,8 +102,9 @@ impl Player {
                 if attached {
                     args.push("--keep-running".into());
                 }
-                args.push(stream.url.clone());
+                //args.push(stream.url.clone());
                 args.extend(iina_mpv_options(stream, title, referer));
+                args.push(stream.url.clone());
                 args
             }
             PlayerKind::Vlc => {
@@ -480,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn iina_arguments_put_stream_before_mpv_prefixed_options() {
+    fn iina_arguments_put_mpv_prefixed_options_before_stream() {
         let player = Player::new(PlayerOptions {
             executable: "iina".into(),
             kind: PlayerKind::Iina,
@@ -509,13 +510,13 @@ mod tests {
             player.command_args(&stream, "Anime Episode 1"),
             vec![
                 "--no-stdin",
-                "https://media/a.m3u8",
                 "--mpv-tls-verify=no",
                 "--mpv-force-media-title=Anime Episode 1",
                 "--mpv-referrer=https://ref.example",
                 "--mpv-http-header-fields=Origin: https://origin.example",
                 "--mpv-sub-file=https://media/subtitles.vtt",
                 "--mpv-slang=English",
+                "https://media/a.m3u8",
             ]
         );
     }
