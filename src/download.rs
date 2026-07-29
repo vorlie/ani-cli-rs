@@ -9,7 +9,8 @@ use reqwest::header;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, process::Command};
 
 use crate::{
-    AniError, RequestHeaders, Result, StreamLink, SubtitleTrack, relay_stream, requires_hls_relay,
+    AniError, RequestHeaders, Result, StreamLink, SubtitleTrack,
+    relay_stream_without_hls_subtitles, requires_hls_relay,
 };
 
 const MAX_SUBTITLE_BYTES: usize = 16 * 1024 * 1024;
@@ -22,7 +23,10 @@ pub struct DownloadOptions {
 
 pub async fn download_stream(stream: &StreamLink, options: &DownloadOptions) -> Result<PathBuf> {
     if requires_hls_relay(stream) {
-        let (_relay, local) = relay_stream(stream).await?;
+        // Downloads never need subtitles exposed as synthetic HLS renditions:
+        // subtitle tracks are fetched separately (via the relayed sidecar
+        // URLs on `local.subtitles`) and muxed into the output with FFmpeg.
+        let (_relay, local) = relay_stream_without_hls_subtitles(stream).await?;
         let target = download_stream_inner(&local, options).await?;
         attach_subtitles(&local, &target).await?;
         return Ok(target);

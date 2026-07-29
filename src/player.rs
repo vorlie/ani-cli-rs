@@ -6,7 +6,10 @@ use std::{
 
 use tokio::process::Command;
 
-use crate::{AniError, Result, StreamLink, relay_stream, requires_hls_relay};
+use crate::{
+    AniError, Result, StreamLink, relay_stream, relay_stream_without_hls_subtitles,
+    requires_hls_relay,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayerKind {
@@ -148,7 +151,17 @@ impl Player {
 
     pub async fn play(&self, stream: &StreamLink, title: &str) -> Result<Option<i32>> {
         if requires_hls_relay(stream) || (self.is_android_player() && stream.hls) {
-            let (_relay, local) = relay_stream(stream).await?;
+            // Android players receive a single intent URL and cannot be given
+            // an explicit `--sub-file`, so they need subtitles exposed as
+            // synthetic HLS renditions. Desktop players already receive
+            // subtitles via `--sub-file`, and wrapping a long subtitle file as
+            // a single oversized HLS segment produces unreliable cue timing
+            // in some HLS demuxers (see issue #18).
+            let (_relay, local) = if self.is_android_player() {
+                relay_stream(stream).await?
+            } else {
+                relay_stream_without_hls_subtitles(stream).await?
+            };
             return self.play_inner(&local, title, true).await;
         }
         self.play_inner(stream, title, false).await
