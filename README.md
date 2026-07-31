@@ -170,7 +170,7 @@ Anikoto API results have IDs beginning with `anikoto:`. Anikoto.cz results begin
 
 Use `ani-cli-rs --download "anime title"` when you want interactive name, season, and episode selection.
 
-Set `ANI_CLI_PROVIDER=anikoto2` to make Anikoto.cz the interactive/search default. The catalogs are intentionally not combined and playback never silently crosses between them.
+Set `ANI_CLI_RS_PROVIDER=anikoto2` to make Anikoto.cz the interactive/search default. The catalogs are intentionally not combined and playback never silently crosses between them.
 
 See the [CLI reference](https://vorlie.github.io/ani-cli-rs/reference/cli/) for every command and JSON workflow.
 
