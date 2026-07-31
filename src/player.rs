@@ -102,9 +102,9 @@ impl Player {
                 if attached {
                     args.push("--keep-running".into());
                 }
+                //args.push(stream.url.clone());
+                args.extend(iina_mpv_options(stream, title, referer));
                 args.push(stream.url.clone());
-                args.push("--".into());
-                args.extend(mpv_options(stream, title, referer));
                 args
             }
             PlayerKind::Vlc => {
@@ -176,9 +176,42 @@ impl Player {
         if self.is_android_player() {
             return self.play_android(stream, title, force_attached).await;
         }
+
+        let mut local_stream = stream.clone();
+
+        if !local_stream.subtitles.is_empty() {
+            let temp_dir = std::env::temp_dir().join("ani_cli_subs");
+            let _ = tokio::fs::create_dir_all(&temp_dir).await;
+
+            let client = reqwest::Client::new();
+
+            for (idx, track) in local_stream.subtitles.iter_mut().enumerate() {
+                if track.url.starts_with("http") {
+                    let mut req = client.get(&track.url);
+                    if let Some(ref referer) = stream.headers.referer {
+                        if !referer.is_empty() {
+                            req = req.header("Referer", referer);
+                        }
+                    }
+                    if let Some(ua) = stream.headers.extra.get("User-Agent") {
+                        req = req.header("User-Agent", ua);
+                    }
+
+                    if let Ok(resp) = req.send().await {
+                        if let Ok(bytes) = resp.bytes().await {
+                            let file_path = temp_dir.join(format!("sub_{idx}.vtt"));
+                            if tokio::fs::write(&file_path, bytes).await.is_ok() {
+                                track.url = file_path.to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let mut command = Command::new(&self.options.executable);
         let attached = self.options.no_detach || force_attached;
-        command.args(self.command_args_inner(stream, title, attached));
+        command.args(self.command_args_inner(&local_stream, title, attached));
         if attached {
             let status = command.status().await.map_err(|e| {
                 AniError::Player(format!(
@@ -408,6 +441,17 @@ fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
     args
 }
 
+fn iina_mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
+    mpv_options(stream, title, referer)
+        .into_iter()
+        .filter_map(|option| {
+            option
+                .strip_prefix("--")
+                .map(|option| format!("--mpv-{option}"))
+        })
+        .collect()
+}
+
 fn append_mpv_headers(args: &mut Vec<String>, stream: &StreamLink) {
     let mut headers = Vec::new();
     if let Some(origin) = &stream.headers.origin
@@ -470,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn iina_arguments_put_stream_before_raw_mpv_options() {
+    fn iina_arguments_put_mpv_prefixed_options_before_stream() {
         let player = Player::new(PlayerOptions {
             executable: "iina".into(),
             kind: PlayerKind::Iina,
@@ -499,14 +543,13 @@ mod tests {
             player.command_args(&stream, "Anime Episode 1"),
             vec![
                 "--no-stdin",
+                "--mpv-tls-verify=no",
+                "--mpv-force-media-title=Anime Episode 1",
+                "--mpv-referrer=https://ref.example",
+                "--mpv-http-header-fields=Origin: https://origin.example",
+                "--mpv-sub-file=https://media/subtitles.vtt",
+                "--mpv-slang=English",
                 "https://media/a.m3u8",
-                "--",
-                "--tls-verify=no",
-                "--force-media-title=Anime Episode 1",
-                "--referrer=https://ref.example",
-                "--http-header-fields=Origin: https://origin.example",
-                "--sub-file=https://media/subtitles.vtt",
-                "--slang=English",
             ]
         );
     }
