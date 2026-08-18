@@ -1,10 +1,12 @@
 use std::{
+    fmt,
     io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     process::Stdio,
 };
 
 use tokio::process::Command;
+use tracing::{debug, info, warn};
 
 use crate::{
     AniError, Result, StreamLink, relay_stream, relay_stream_without_hls_subtitles,
@@ -20,6 +22,21 @@ pub enum PlayerKind {
     AndroidVlc,
     Syncplay,
     Custom,
+}
+
+impl fmt::Display for PlayerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            Self::Mpv => "mpv",
+            Self::Iina => "iina",
+            Self::Vlc => "vlc",
+            Self::AndroidMpv => "android-mpv",
+            Self::AndroidVlc => "android-vlc",
+            Self::Syncplay => "syncplay",
+            Self::Custom => "custom",
+        };
+        f.write_str(label)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -89,11 +106,24 @@ impl Player {
         self.command_args_inner(stream, title, self.options.no_detach)
     }
 
+    /// Human-readable summary of the configured player (executable + kind).
+    /// Useful for debug logs and error messages.
+    pub fn describe(&self) -> String {
+        format!(
+            "{} ({}) [no_detach={}, exit_after_play={}]",
+            self.options.executable.display(),
+            self.options.kind,
+            self.options.no_detach,
+            self.options.exit_after_play,
+        )
+    }
+
     fn command_args_inner(&self, stream: &StreamLink, title: &str, attached: bool) -> Vec<String> {
         let referer = stream.headers.referer.as_deref().unwrap_or("");
         match self.options.kind {
             PlayerKind::Mpv => {
                 let mut args = mpv_options(stream, title, referer);
+                // Ensure URL is passed last
                 args.push(stream.url.clone());
                 args
             }
@@ -150,7 +180,22 @@ impl Player {
     }
 
     pub async fn play(&self, stream: &StreamLink, title: &str) -> Result<Option<i32>> {
+        info!(
+            title = %title,
+            player = %self.describe(),
+            stream_url = %stream.url,
+            hls = stream.hls,
+            subtitles = stream.subtitles.len(),
+            "playback requested",
+        );
         if requires_hls_relay(stream) || (self.is_android_player() && stream.hls) {
+            debug!(
+                title = %title,
+                player = %self.options.kind.to_string(),
+                android_player = self.is_android_player(),
+                hls = stream.hls,
+                "stream requires the loopback HLS relay",
+            );
             // Android players receive a single intent URL and cannot be given
             // an explicit `--sub-file`, so they need subtitles exposed as
             // synthetic HLS renditions. Desktop players already receive
@@ -162,6 +207,11 @@ impl Player {
             } else {
                 relay_stream_without_hls_subtitles(stream).await?
             };
+            debug!(
+                title = %title,
+                local_url = %local.url,
+                "HLS relay is serving the rewritten stream URL to the player",
+            );
             return self.play_inner(&local, title, true).await;
         }
         self.play_inner(stream, title, false).await
@@ -176,33 +226,98 @@ impl Player {
         if self.is_android_player() {
             return self.play_android(stream, title, force_attached).await;
         }
+        
+        // Validate that the player executable exists before attempting to launch
+        // Only check if it's an absolute path or relative path with directory components
+        let needs_validation = self.options.executable.components().count() > 1;
+        if needs_validation && !self.options.executable.exists() {
+            return Err(AniError::Player(format!(
+                "player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
+                self.options.executable.display()
+            )));
+        }
+        
         let mut command = Command::new(&self.options.executable);
         let attached = self.options.no_detach || force_attached;
-        command.args(self.command_args_inner(stream, title, attached));
+        let args = self.command_args_inner(stream, title, attached);
+        info!(
+            title = %title,
+            executable = %self.options.executable.display(),
+            kind = %self.options.kind,
+            attached,
+            "launching external player",
+        );
+        // The URL is logged at debug level so that long playlist URLs do not
+        // clutter the default log output, but the rest of the player command
+        // line (including the referer / user-agent switches) is logged at
+        // debug level for the same reason.
+        debug!(
+            title = %title,
+            stream_url = %stream.url,
+            stream_hls = stream.hls,
+            args = ?args,
+            "full player command line",
+        );
+        command.args(args);
         if attached {
-            let status = command.status().await.map_err(|e| {
-                AniError::Player(format!(
-                    "could not launch {}: {e}",
-                    self.options.executable.display()
-                ))
-            })?;
-            let code = status.code().unwrap_or(1);
-            if !status.success() && self.options.exit_after_play {
-                return Err(AniError::Player(format!("player exited with {code}")));
+            match command.status().await {
+                Ok(status) => {
+                    let code = status.code().unwrap_or(1);
+                    info!(
+                        title = %title,
+                        exit_code = code,
+                        success = status.success(),
+                        "player exited",
+                    );
+                    if !status.success() && self.options.exit_after_play {
+                        return Err(AniError::Player(format!("player exited with {code}")));
+                    }
+                    Ok(Some(code))
+                }
+                Err(error) => {
+                    warn!(
+                        title = %title,
+                        executable = %self.options.executable.display(),
+                        error = %error,
+                        "failed to launch player in attached mode",
+                    );
+                    Err(AniError::Player(format!(
+                        "could not launch {}: {error}",
+                        self.options.executable.display()
+                    )))
+                }
             }
-            Ok(Some(code))
         } else {
+            // ensure proper process detachment
             command
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
-            command.spawn().map_err(|e| {
-                AniError::Player(format!(
-                    "could not launch {}: {e}",
-                    self.options.executable.display()
-                ))
-            })?;
-            Ok(None)
+            match command.spawn() {
+                Ok(child) => {
+                    info!(
+                        title = %title,
+                        pid = child.id().unwrap_or(0),
+                        executable = %self.options.executable.display(),
+                        "player launched in the background",
+                    );
+                    // Immediately detach the child process
+                    let _ = child.id(); // Ensure the process handle is consumed
+                    Ok(None)
+                }
+                Err(error) => {
+                    warn!(
+                        title = %title,
+                        executable = %self.options.executable.display(),
+                        error = %error,
+                        "failed to launch player in detached mode",
+                    );
+                    Err(AniError::Player(format!(
+                        "could not launch {}: {error}",
+                        self.options.executable.display()
+                    )))
+                }
+            }
         }
     }
 
@@ -227,14 +342,34 @@ impl Player {
             ));
         }
 
+        let launch_args = self.command_args_inner(stream, title, true);
+        info!(
+            title = %title,
+            executable = %self.options.executable.display(),
+            "launching Android activity for playback",
+        );
+        debug!(
+            title = %title,
+            stream_url = %stream.url,
+            args = ?launch_args,
+            "full Android intent command line",
+        );
         let launch_result = Command::new(&self.options.executable)
-            .args(self.command_args_inner(stream, title, true))
+            .args(launch_args)
             .status()
             .await;
         let code = match launch_result {
-            Ok(status) if status.success() => status.code().unwrap_or(0),
+            Ok(status) if status.success() => {
+                let code = status.code().unwrap_or(0);
+                info!(
+                    title = %title,
+                    exit_code = code,
+                    "Android player activity returned successfully",
+                );
+                code
+            }
             result => {
-                let primary_error = match result {
+                let primary_error = match &result {
                     Ok(status) => format!(
                         "Android activity launcher {} exited with {}",
                         self.options.executable.display(),
@@ -245,16 +380,31 @@ impl Player {
                         self.options.executable.display()
                     ),
                 };
+                warn!(
+                    title = %title,
+                    executable = %self.options.executable.display(),
+                    error = %primary_error,
+                    "primary Android launch failed; trying termux-open fallback",
+                );
                 match launch_android_url_fallback(&self.options.executable, &stream.url, stream.hls)
                     .await
                 {
                     Ok(code) => {
+                        warn!(
+                            title = %title,
+                            "opened the stream through Android's default URL handler instead",
+                        );
                         eprintln!(
                             "warning: {primary_error}; opened the stream through Android's default URL handler instead"
                         );
                         code
                     }
                     Err(fallback_error) => {
+                        warn!(
+                            title = %title,
+                            error = %fallback_error,
+                            "termux-open fallback also failed",
+                        );
                         return Err(AniError::Player(format!(
                             "{primary_error}; {fallback_error}"
                         )));
@@ -264,6 +414,10 @@ impl Player {
         };
 
         if terminal {
+            debug!(
+                title = %title,
+                "waiting for the Android player to finish before returning control to the TUI",
+            );
             wait_for_android_player().await?;
         }
         Ok(Some(code))
@@ -404,6 +558,13 @@ fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
     }
     if let Some(track) = stream.subtitles.iter().find(|track| track.default) {
         args.push(format!("--slang={}", track.label));
+    }
+    // Add cache settings for HLS relay streams
+    if stream.hls && crate::anikoto::requires_hls_relay(stream) {
+        args.push("--cache=yes".into());
+        args.push("--cache-secs=120".into());
+        args.push("--demuxer-max-bytes=512MiB".into());
+        args.push("--demuxer-max-back-bytes=256MiB".into());
     }
     args
 }

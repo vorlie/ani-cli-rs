@@ -1,68 +1,42 @@
-# ani-cli-rs 0.9.0
+# ani-cli-rs 0.9.4
+ 
+This release fixes video player launching issues.
+ 
+## Fixes
+ 
+- Fixed video player launching failures by adding HLS relay cache settings to mpv arguments
+- Added mpv cache parameters (`--cache=yes`, `--cache-secs=120`, `--demuxer-max-bytes=512MiB`, `--demuxer-max-back-bytes=256MiB`) for relayed streams
+- Enhanced player executable validation to provide better error messages when players are not found
+- Improved process detachment behavior to match koto-cli's nohup behavior
+- Fixed URL argument ordering to ensure the stream URL is passed as the last argument to mpv
+- These changes resolve playback issues with Anikoto provider's HLS streams and relay mechanism
 
-This release adds tested Android/Termux playback support, including native Android player handoff, protected HLS relaying, and external subtitle tracks.
+## Debug logging improvements
 
-## Highlights
+The application includes comprehensive debug logging through the `tracing` crate to help with troubleshooting and issue reporting:
 
-- Added source-build support for Android through Termux.
-- Added Android `VIEW` intent launching for mpv-android and VLC.
-- Added compatibility fallbacks through media-typed `termux-open` and `termux-open-url`.
-- Added Android playback for protected MegaPlay/KotoCDN HLS streams through the existing loopback relay.
-- Added external WebVTT/SRT subtitles as standard HLS subtitle renditions.
-- Added generated subtitle media playlists with duration derived from the final subtitle cue.
-- Added Termux-specific help, installation instructions, usage guidance, and troubleshooting.
+- Player launch logging with executable details, process IDs, and command arguments
+- Stream resolution logging with URLs, HLS status, and provider information
+- HLS relay logging with bind addresses, upstream hosts, and resource registration
+- Network request logging for provider API calls and stream fetching
+- Error context logging with structured metadata for better debugging
 
-## Android player behavior
-
-Normal playback requests mpv-android. `--vlc` requests the Android VLC application when Termux's explicit activity bridge works.
-
-Some Termux installations expose a socket-backed `termux-am` that cannot connect. ani-cli-rs now detects a failed launch and falls back to Android's media handler. On this fallback path, Android's selected or default application takes precedence, so `--vlc` becomes a preference rather than a guarantee.
-
-For protected HLS, keep Termux running while watching. Return to Termux and press Enter only after playback finishes; pressing Enter early shuts down the local relay.
-
-## Subtitles
-
-Separate provider subtitles are wrapped in HLS subtitle media playlists and exposed to compatible Android players. Select the track from the player's subtitle menu if it is not enabled automatically.
-
-Device testing confirmed relayed playback and selectable external subtitles with mpv-android, VLC, Amnis, and Samsung Video Player. Compatibility can still vary between Android versions and player builds. Embedded and burned-in subtitles are unaffected.
-
-## Installation
-
-No Android binary is published. Build from source inside Termux:
-
-```sh
-pkg update
-pkg install git rust termux-tools
-git clone https://github.com/vorlie/ani-cli-rs.git
-cd ani-cli-rs
-cargo build --release --locked
-install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
+Enable debug logging with:
+```console
+RUST_LOG=ani_cli_rs=debug,ani_cli=debug ani-cli-rs "anime title"
 ```
 
-Install an Android media player separately. Do not use `pkg install vlc` for Android handoff; that installs a terminal VLC build rather than the Android application.
-
-```sh
-ani-cli-rs "cyberpunk"
-ani-cli-rs --vlc "cyberpunk"
+For full stream resolution and relay tracing:
+```console
+RUST_LOG=ani_cli_rs=trace,ani_cli=trace ani-cli-rs "anime title"
 ```
-
-Official prebuilt releases remain available for Windows x64 and Linux x86-64. macOS and Termux remain tested source-build platforms.
 
 ## Upgrade
-
-Existing Windows and Linux installations can update with:
-
+ 
+Existing installations can update with:
+ 
 ```console
 ani-cli-rs update
 ```
-
-Termux users should pull and rebuild:
-
-```sh
-cd ~/ani-cli-rs
-git pull --ff-only
-cargo build --release --locked
-install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
-```
-
-**Full changelog:** [0.8.0...0.9.0](https://github.com/vorlie/ani-cli-rs/compare/0.8.0...0.9.0)
+ 
+**Full changelog:** [0.9.3...0.9.4](https://github.com/vorlie/ani-cli-rs/compare/0.9.3...0.9.4)
