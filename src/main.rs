@@ -11,12 +11,13 @@ use ani_cli::{RequestHeaders, SubtitleTrack};
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
 
 mod updater;
 
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_RS_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS, an Android media player from Termux, and mpv on other desktops by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nTERMUX:\n  Install an Android video player; do not use the terminal VLC package.\n  --vlc requests Android VLC when explicit intents work. A compatibility fallback\n  uses Android's media handler instead. Keep Termux open for relayed HLS playback.\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_RS_PROVIDER\n\nOfficial prebuilt releases are provided for Windows and Linux. Tested macOS and Termux builds are compiled from source.";
+const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nTERMUX:\n  Install an Android video player; do not use the terminal VLC package.\n  --vlc requests Android VLC when explicit intents work. A compatibility fallback\n  uses Android's media handler instead. Keep Termux open for relayed HLS playback.\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_RS_PROVIDER\n\nDEBUG LOGGING:\n  RUST_LOG=ani_cli_rs=debug,ani_cli=debug    verbose launch diagnostics\n  RUST_LOG=ani_cli_rs=trace,ani_cli=trace    full stream resolution + relay tracing\n  RUST_LOG=warn                              only warnings and errors (default off)\n\nOfficial prebuilt releases are provided for Windows and Linux. Tested macOS and Termux builds are compiled from source.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -950,7 +951,16 @@ fn build_legacy_player(cli: &Cli) -> Player {
         });
         options.kind = PlayerKind::Syncplay;
     }
-    Player::new(options)
+    let player = Player::new(options);
+    info!(
+        executable = %player.describe(),
+        vlc = cli.vlc,
+        syncplay = cli.syncplay,
+        no_detach = cli.no_detach,
+        exit_after_play = cli.exit_after_play,
+        "selected external player",
+    );
+    player
 }
 
 fn select_vlc_player(options: &mut PlayerOptions, android: bool, windows: bool) {
@@ -1107,7 +1117,24 @@ async fn play_or_download(
     quality: &str,
     download: bool,
 ) -> Result<()> {
+    debug!(
+        show = %context.show.name,
+        show_id = %context.show.id,
+        episode,
+        quality,
+        download,
+        "resolving episode stream",
+    );
     let prepared = prepare_episode(context, episode, quality).await?;
+    debug!(
+        show = %context.show.name,
+        episode = %prepared.episode,
+        stream_url = %prepared.stream.url,
+        stream_hls = prepared.stream.hls,
+        resolution = %prepared.stream.resolution,
+        provider = %prepared.stream.provider,
+        "stream resolved",
+    );
     execute_prepared_episode(context, &prepared, download).await
 }
 
@@ -1122,6 +1149,7 @@ async fn execute_prepared_episode(
         prepared.episode
     );
     if download {
+        info!(title = %title, "downloading episode stream");
         let path = download_stream(
             &prepared.stream,
             &DownloadOptions {
@@ -1132,6 +1160,13 @@ async fn execute_prepared_episode(
         .await?;
         println!("Saved {}", path.display());
     } else {
+        info!(
+            title = %title,
+            player = %context.player.describe(),
+            stream_url = %prepared.stream.url,
+            stream_hls = prepared.stream.hls,
+            "handing off episode stream to the player",
+        );
         context.player.play(&prepared.stream, &title).await?;
     }
     context

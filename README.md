@@ -196,6 +196,20 @@ On Windows with WSL available, `.\showcase\showcase.ps1` generates the determini
 
 Target-specific Cargo aliases and release packaging are covered in [Building and Releasing](https://vorlie.github.io/ani-cli-rs/development/building/).
 
+## Debug logging
+
+If the external player refuses to open or the wrong executable is launched, enable the built-in diagnostic logs to see which player is selected, the full command line, and the resolved stream URL:
+
+```bash
+# PowerShell
+$env:RUST_LOG = "ani_cli_rs=debug,ani_cli=debug"; ani-cli-rs "cyberpunk edgerunners"
+
+# bash / zsh
+RUST_LOG=ani_cli_rs=debug,ani_cli=debug ani-cli-rs "cyberpunk edgerunners"
+```
+
+Log lines include the chosen executable, the `mpv`/`vlc`/`iina`/`syncplay` kind, the attached/detached mode, whether the loopback HLS relay was started, the relay bind address, and the exit code of the player. Use `RUST_LOG=ani_cli_rs=trace,ani_cli=trace` for full stream resolution and relay tracing.
+
 ## Documentation
 
 The full user and contributor documentation is published at <https://vorlie.github.io/ani-cli-rs/>. Its source is tracked in [`website/docs/`](website/docs/index.md) so documentation changes can be reviewed with code changes.

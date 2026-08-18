@@ -18,6 +18,7 @@ use hyper_util::rt::TokioIo;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
+use tracing::{debug, info};
 use url::Url;
 
 use crate::{AniError, RequestHeaders, Result, StreamLink, SubtitleTrack};
@@ -110,6 +111,13 @@ async fn relay_stream_inner(
     let upstream = validate_upstream(&stream.url)?;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
+    info!(
+        bind_address = %address,
+        upstream_host = %upstream.host_str().unwrap_or("?"),
+        expose_subtitles_in_hls,
+        subtitle_tracks = stream.subtitles.len(),
+        "starting loopback HLS relay",
+    );
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
     let state = Arc::new(State {
         client: Client::builder()
@@ -188,6 +196,11 @@ async fn relay_stream_inner(
     {
         entry.subtitles = playlist_subtitles;
     }
+    debug!(
+        local_url = %local.url,
+        bind_address = %address,
+        "HLS relay is ready to serve the rewritten stream URL",
+    );
     Ok((
         HlsRelay {
             shutdown: Some(shutdown_tx),
