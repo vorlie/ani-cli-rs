@@ -179,16 +179,15 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
             .last()
             .cloned()
             .map(|v| vec![v])
-            .ok_or_else(|| AniError::Unavailable("no episodes".into()));
+            .ok_or_else(|| AniError::UnavailableNoEpisodes);
     }
     if trimmed.contains(char::is_whitespace) {
         let requested: Vec<_> = trimmed.split_whitespace().map(str::to_owned).collect();
         if requested.iter().all(|v| available.contains(v)) {
             return Ok(requested);
         }
-        return Err(AniError::Input(
-            "one or more selected episodes do not exist".into(),
-        ));
+        eprintln!("One or more selected episodes do not exist");
+        return Err(AniError::InputInvalidEpisode);
     }
     if let Some((start, end)) = trimmed.split_once('-') {
         let end = if end == "-1" || end.is_empty() {
@@ -199,20 +198,21 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
         let start_index = available
             .iter()
             .position(|v| v == start)
-            .ok_or_else(|| AniError::Input(format!("episode {start} does not exist")))?;
+            .ok_or_else(|| AniError::InputInvalidEpisode)?;
         let end_index = available
             .iter()
             .position(|v| v == end)
-            .ok_or_else(|| AniError::Input(format!("episode {end} does not exist")))?;
+            .ok_or_else(|| AniError::InputInvalidEpisode)?;
         if start_index > end_index {
-            return Err(AniError::Input("episode range is reversed".into()));
+            eprintln!("Episode range is reversed");
+            return Err(AniError::InputInvalidEpisode);
         }
         return Ok(available[start_index..=end_index].to_vec());
     }
     if available.iter().any(|v| v == trimmed) {
         Ok(vec![trimmed.to_owned()])
     } else {
-        Err(AniError::Input(format!("episode {trimmed} does not exist")))
+        Err(AniError::InputInvalidEpisode)
     }
 }
 

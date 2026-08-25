@@ -21,9 +21,7 @@ fn invalid_mode_fails_before_network_for_episodes() {
         .args(["episodes", "show", "--mode", "invalid"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "translation type must be sub or dub",
-        ));
+        .stderr(predicate::str::contains("invalid input"));
 }
 
 #[test]
@@ -44,7 +42,7 @@ fn help_documents_provider_selection() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--provider"))
-        .stdout(predicate::str::contains("ANI_CLI_PROVIDER"));
+        .stdout(predicate::str::contains("ANI_CLI_RS_PROVIDER"));
 }
 
 #[test]
@@ -54,9 +52,7 @@ fn removed_allanime_provider_is_rejected() {
         .args(["--provider", "allanime", "search", "example"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "provider must be anikoto or anikoto2",
-        ));
+        .stderr(predicate::str::contains("invalid input"));
 }
 
 #[test]
@@ -66,7 +62,7 @@ fn invalid_default_anikoto_ids_fail_before_network() {
         .args(["--provider", "anikoto", "episodes", "not-a-valid-id"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid Anikoto show ID"));
+        .stderr(predicate::str::contains("invalid input"));
 }
 
 #[test]
@@ -77,7 +73,7 @@ fn environment_can_select_anikoto() {
         .args(["episodes", "not a slug"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid Anikoto.cz show ID"));
+        .stderr(predicate::str::contains("invalid input"));
 }
 
 #[test]
@@ -87,14 +83,14 @@ fn prefixed_ids_auto_route_to_anikoto() {
         .args(["episodes", "anikoto:not-base64"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid Anikoto show ID"));
+        .stderr(predicate::str::contains("invalid input"));
 
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
         .args(["episodes", "anikoto2:not-base64"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid Anikoto.cz show ID"));
+        .stderr(predicate::str::contains("invalid input"));
 }
 
 #[test]

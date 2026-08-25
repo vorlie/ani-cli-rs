@@ -1131,7 +1131,7 @@ mod tests {
     #[test]
     fn rejects_non_https_remote_resources() {
         let error = validate_upstream("http://example.com/master.m3u8").unwrap_err();
-        assert!(error.to_string().contains("must use HTTPS"));
+        assert!(matches!(error, AniError::Provider(_)));
     }
 
     #[test]
@@ -1160,6 +1160,6 @@ mod tests {
             ResourceKind::Segment,
         )
         .unwrap_err();
-        assert!(error.to_string().contains("too many resources"));
+        assert!(matches!(error, AniError::Provider(_)));
     }
 }

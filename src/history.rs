@@ -24,7 +24,7 @@ impl HistoryStore {
             return Ok(Self::new(PathBuf::from(path).join("ani-hsts")));
         }
         let project = directories::ProjectDirs::from("org", "ani-cli", "ani-cli")
-            .ok_or_else(|| AniError::History("could not determine a state directory".into()))?;
+            .ok_or_else(|| AniError::HistoryStateDirectory)?;
         let directory = project
             .state_dir()
             .unwrap_or_else(|| project.data_local_dir());
