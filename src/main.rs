@@ -1,13 +1,13 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
-use ani_cli::{
+use ani_lib::{
     AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, HistoryEntry,
     HistoryStore, I18n, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
     StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
     provider_from_show_id,
 };
 #[cfg(debug_assertions)]
-use ani_cli::{RequestHeaders, SubtitleTrack};
+use ani_lib::{RequestHeaders, SubtitleTrack};
 use clap::{Args, Parser, Subcommand};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
@@ -1493,7 +1493,7 @@ mod tests {
             hls: false,
             provider: "Test".into(),
             downloadable,
-            headers: ani_cli::RequestHeaders::default(),
+            headers: ani_lib::RequestHeaders::default(),
             subtitles: vec![],
         }
     }

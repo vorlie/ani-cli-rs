@@ -1,3 +1,4 @@
+// src/lib.rs
 //! Reusable Anikoto clients and cross-platform ani-cli support modules.
 
 mod anikoto;
