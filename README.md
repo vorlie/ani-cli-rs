@@ -8,6 +8,16 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 
 ![Automated ani-cli-rs showcase](docs/assets/ani-cli-rs-showcase.gif)
 
+## Kioku
+
+[Kioku](https://github.com/vorlie/kioku) is a native desktop AniList manager that uses `ani-cli-rs` for anime search and playback.
+
+It aims to combine AniList library management with an integrated media playback experience, without requiring a separate player application.
+
+> [!NOTE]
+> Kioku is currently in an early stage of development and is **not feature-complete**. Expect incomplete features, UI changes, and breaking changes as development continues.
+
+
 ## Quick links
 
 - [Install](#installation)
