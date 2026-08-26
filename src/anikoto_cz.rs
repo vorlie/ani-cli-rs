@@ -153,7 +153,7 @@ impl AnikotoCzClient {
     ) -> Result<Vec<SearchResult>> {
         let query = query.trim();
         if query.is_empty() {
-            return Err(AniError::Input("search query cannot be empty".into()));
+            return Err(AniError::InputEmptyQuery);
         }
         let mut url = Url::parse(&format!("{}/ajax/anime/search", self.inner.base))?;
         url.query_pairs_mut().append_pair("keyword", query);
@@ -184,10 +184,8 @@ impl AnikotoCzClient {
             .collect::<Vec<_>>();
         sort_episodes(&mut episodes);
         if episodes.is_empty() {
-            return Err(AniError::Unavailable(format!(
-                "Anikoto.cz has no {mode} episodes for {}",
-                id.title
-            )));
+            eprintln!("Anikoto.cz has no {mode} episodes for {}", id.title);
+            return Err(AniError::UnavailableNoEpisodes);
         }
         Ok(episodes)
     }
@@ -205,15 +203,14 @@ impl AnikotoCzClient {
             .episodes
             .iter()
             .find(|value| value.number == episode_number)
-            .ok_or_else(|| AniError::Unavailable(format!("episode {episode} does not exist")))?;
+            .ok_or_else(|| AniError::UnavailableNoEpisodes)?;
         let available = match mode {
             TranslationType::Sub => selected.sub,
             TranslationType::Dub => selected.dub,
         };
         if !available {
-            return Err(AniError::Unavailable(format!(
-                "episode {episode} has no {mode} servers"
-            )));
+            eprintln!("Episode {episode} has no {mode} servers");
+            return Err(AniError::UnavailableNoEpisodes);
         }
 
         let episode_url = format!(
@@ -269,9 +266,8 @@ impl AnikotoCzClient {
             } else {
                 failures.join("; ")
             };
-            return Err(AniError::Unavailable(format!(
-                "Anikoto.cz native source resolution failed: {detail}"
-            )));
+            eprintln!("Anikoto.cz native source resolution failed: {detail}");
+            return Err(AniError::UnavailableNoEpisodes);
         }
         Ok(streams)
     }
@@ -307,9 +303,7 @@ impl AnikotoCzClient {
             })?;
         let episodes = parse_episodes(html)?;
         if episodes.is_empty() {
-            return Err(AniError::Unavailable(
-                "Anikoto.cz returned no episodes".into(),
-            ));
+            return Err(AniError::UnavailableNoEpisodes);
         }
         let series = Series {
             canonical,

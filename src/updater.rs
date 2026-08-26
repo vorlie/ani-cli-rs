@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::SystemTime};
 
-use ani_cli::{AniError, Result};
+use ani_lib::{AniError, Result};
 use serde::Deserialize;
 #[cfg(not(target_os = "macos"))] // suppress build errors for unused import on macOS
 use tokio::process::Command;

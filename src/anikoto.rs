@@ -153,7 +153,7 @@ impl AnikotoClient {
     ) -> Result<Vec<SearchResult>> {
         let query = query.trim();
         if query.is_empty() {
-            return Err(AniError::Input("search query cannot be empty".into()));
+            return Err(AniError::InputEmptyQuery);
         }
         let cache_key = format!("{}:{}", options.allow_adult, query.to_ascii_lowercase());
         if let Some(value) = cache_get(&self.inner.searches, &cache_key) {
@@ -200,9 +200,7 @@ impl AnikotoClient {
         }
         let count = id.episodes.unwrap_or(0);
         if count == 0 {
-            return Err(AniError::Unavailable(
-                "Anikoto could not determine the episode list for this title".into(),
-            ));
+            return Err(AniError::UnavailableNoEpisodes);
         }
         Ok((1..=count).map(|episode| episode.to_string()).collect())
     }
@@ -224,9 +222,7 @@ impl AnikotoClient {
         let selected = series.iter().find(|value| value.number == episode);
         let candidates = embed_candidates(&self.inner.megaplay_base, &id, episode, mode, selected);
         if candidates.is_empty() {
-            return Err(AniError::Unavailable(
-                "Anikoto has no mapping for the selected episode".into(),
-            ));
+            return Err(AniError::UnavailableNoEpisodes);
         }
 
         let mut failures = Vec::new();
@@ -241,10 +237,8 @@ impl AnikotoClient {
                 Err(error) => failures.push(error.to_string()),
             }
         }
-        Err(AniError::Unavailable(format!(
-            "Anikoto native source resolution failed: {}",
-            failures.join("; ")
-        )))
+        eprintln!("Anikoto native source resolution failures: {}", failures.join("; "));
+        Err(AniError::UnavailableNoEpisodes)
     }
 
     async fn search_recent(&self, query: &str, allow_adult: bool) -> Result<Vec<SearchResult>> {

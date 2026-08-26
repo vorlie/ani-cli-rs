@@ -304,14 +304,10 @@ async fn download_hls(stream: &StreamLink, target: &Path) -> Result<()> {
     }
 
     if failures.is_empty() {
-        Err(AniError::Download(
-            "HLS downloads require yt-dlp or ffmpeg in PATH".into(),
-        ))
+        Err(AniError::DownloadNoDownloader)
     } else {
-        Err(AniError::Download(format!(
-            "all available HLS downloaders failed: {}",
-            failures.join("; ")
-        )))
+        eprintln!("HLS download failures: {}", failures.join("; "));
+        Err(AniError::DownloadFailed)
     }
 }
 

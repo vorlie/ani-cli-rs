@@ -6,7 +6,7 @@ license = "GPL-3.0-only"
 description = "Cross-platform Rust port of ani-cli with Anikoto providers"
 
 [lib]
-name = "ani_cli"
+name = "ani_lib"
 path = "src/lib.rs"
 
 [[bin]]

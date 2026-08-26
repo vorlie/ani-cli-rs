@@ -231,10 +231,8 @@ impl Player {
         // Only check if it's an absolute path or relative path with directory components
         let needs_validation = self.options.executable.components().count() > 1;
         if needs_validation && !self.options.executable.exists() {
-            return Err(AniError::Player(format!(
-                "player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
-                self.options.executable.display()
-            )));
+            eprintln!("Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.", self.options.executable.display());
+            return Err(AniError::PlayerNotFound);
         }
         
         let mut command = Command::new(&self.options.executable);
@@ -270,7 +268,8 @@ impl Player {
                         "player exited",
                     );
                     if !status.success() && self.options.exit_after_play {
-                        return Err(AniError::Player(format!("player exited with {code}")));
+                        eprintln!("Player exited with {code}");
+                        return Err(AniError::PlayerExitFailed);
                     }
                     Ok(Some(code))
                 }
@@ -281,10 +280,8 @@ impl Player {
                         error = %error,
                         "failed to launch player in attached mode",
                     );
-                    Err(AniError::Player(format!(
-                        "could not launch {}: {error}",
-                        self.options.executable.display()
-                    )))
+                    eprintln!("Could not launch {}: {error}", self.options.executable.display());
+                    Err(AniError::PlayerLaunchFailed)
                 }
             }
         } else {
@@ -312,10 +309,8 @@ impl Player {
                         error = %error,
                         "failed to launch player in detached mode",
                     );
-                    Err(AniError::Player(format!(
-                        "could not launch {}: {error}",
-                        self.options.executable.display()
-                    )))
+                    eprintln!("Could not launch {}: {error}", self.options.executable.display());
+                    Err(AniError::PlayerLaunchFailed)
                 }
             }
         }
@@ -336,10 +331,7 @@ impl Player {
     ) -> Result<Option<i32>> {
         let terminal = io::stdin().is_terminal();
         if relay_active && !terminal {
-            return Err(AniError::Player(
-                "Android HLS playback requires an interactive Termux terminal so the local relay can remain active"
-                    .into(),
-            ));
+            return Err(AniError::PlayerAndroidTerminalRequired);
         }
 
         let launch_args = self.command_args_inner(stream, title, true);
@@ -405,9 +397,8 @@ impl Player {
                             error = %fallback_error,
                             "termux-open fallback also failed",
                         );
-                        return Err(AniError::Player(format!(
-                            "{primary_error}; {fallback_error}"
-                        )));
+                        eprintln!("{primary_error}; {fallback_error}");
+                        return Err(AniError::PlayerLaunchFailed);
                     }
                 }
             }
@@ -540,7 +531,10 @@ async fn wait_for_android_player() -> Result<()> {
         Ok::<(), io::Error>(())
     })
     .await
-    .map_err(|error| AniError::Player(format!("Android playback prompt failed: {error}")))??;
+    .map_err(|error| {
+        eprintln!("Android playback prompt failed: {error}");
+        AniError::PlayerLaunchFailed
+    })??;
     Ok(())
 }
 
