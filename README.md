@@ -27,7 +27,7 @@ Add the dependency:
 
 ```toml
 [dependencies]
-ani-cli-rs = "0.9"
+ani-cli-rs = "0.9.6"
 ```
 
 Then use the exported API:
