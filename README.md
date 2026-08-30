@@ -4,7 +4,7 @@ A cross-platform Rust port of [ani-cli](https://github.com/pystardust/ani-cli) w
 
 `ani-cli-rs` provides the familiar interactive ani-cli experience on Windows, Linux, macOS, and Termux while keeping its executable name distinct from the Bash project. It also exposes the scraper as an `ani_cli` Rust library.
 
-[Join Discord](https://discord.gg/9SXX6ddpNR)
+[Join Discord](https://discord.gg/9SXX6ddpNR) - [DMCA & Copyright Disclaimer](DMCA.md)
 
 ![Automated ani-cli-rs showcase](docs/assets/ani-cli-rs-showcase.gif)
 
