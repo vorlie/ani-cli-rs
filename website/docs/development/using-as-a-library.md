@@ -26,13 +26,13 @@ version = "0.9.4"
 [lib]
 name = "ani_lib"
 path = "src/lib.rs"
-````
+```
 
 Add it to your application's `Cargo.toml`:
 
 ```toml
 [dependencies]
-ani-cli-rs = "0.9"
+ani-cli-rs = "0.9.6"
 ```
 
 Then import functionality from `ani_lib`:
