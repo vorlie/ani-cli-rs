@@ -61,3 +61,4 @@ nav:
     - Security and Privacy: development/security.md
     - Building and Releasing: development/building.md
     - Contributing: development/contributing.md
+    - Using as a library: development/using-as-a-library.md
