@@ -296,6 +296,15 @@ Provider internals are documented in [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KO
 
 This project targets Windows, Linux, tested macOS source builds, and tested Termux source builds. iSH adapters, rofi/dmenu integration, intro skipping, and system-journal logging are not currently included.
 
+## Media hosting
+
+`ani-cli-rs` does not host, mirror, or distribute the media it resolves. The application retrieves search and stream information from third-party providers and passes resolved media streams to the user's selected playback or download tool.
+
+For HLS sources that require local processing, `ani-cli-rs` can create a temporary loopback relay on the user's device. This relay operates locally and is not an internet-facing media proxy.
+
+Users are responsible for complying with applicable laws and the terms of service of the services they access.
+
+
 ## License
 
 Licensed under [GPL-3.0-only](LICENSE).
