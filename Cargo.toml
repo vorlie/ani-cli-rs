@@ -1,9 +1,15 @@
 [package]
 name = "ani-cli-rs"
-version = "0.9.4"
+version = "0.9.5"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Cross-platform Rust port of ani-cli with Anikoto providers"
+repository = "https://github.com/vorlie/ani-cli-rs"
+homepage = "https://github.com/vorlie/ani-cli-rs"
+documentation = "https://vorlie.github.io/ani-cli-rs/"
+readme = "README.md"
+keywords = ["anime", "ani-cli", "streaming", "media", "playback"]
+categories = ["multimedia", "command-line-utilities"]
 
 [lib]
 name = "ani_lib"

@@ -17,6 +17,72 @@ It aims to combine AniList library management with an integrated media playback 
 > [!NOTE]
 > Kioku is currently in an early stage of development and is **not feature-complete**. Expect incomplete features, UI changes, and breaking changes as development continues.
 
+## Rust library
+
+`ani-cli-rs` also exposes its provider and playback functionality as the `ani_lib` Rust library crate.
+
+The library is intended for applications that want to integrate ani-cli-rs provider resolution directly instead of invoking the CLI as a subprocess.
+
+Add the dependency:
+
+```toml
+[dependencies]
+ani-cli-rs = "0.9"
+```
+
+Then use the exported API:
+
+```rust
+use ani_lib::{
+    AnikotoCzClient,
+    TranslationType,
+};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = AnikotoCzClient::new()?;
+
+    let results = client
+        .search("Frieren", TranslationType::Sub)
+        .await?;
+
+    for result in results {
+        println!("{}", result.name);
+    }
+
+    Ok(())
+}
+```
+
+The library exposes the main provider, playback, download, history, HLS relay, internationalization, and model APIs used internally by the CLI.
+
+### Library API
+
+The public API currently includes:
+
+* `AnikotoClient` and `AnikotoClientBuilder`
+* `AnikotoCzClient` and `AnikotoCzClientBuilder`
+* `SearchResult`
+* `StreamLink`
+* `SubtitleTrack`
+* `TranslationType`
+* `SearchOptions`
+* `CatalogProvider`
+* `HlsRelay`
+* `relay_stream`
+* `relay_stream_without_hls_subtitles`
+* `download_stream`
+* `HistoryStore`
+* `HistoryEntry`
+* `Player`
+* `PlayerKind`
+* `PlayerOptions`
+* `I18n`
+* `Locale`
+
+The CLI itself is built on top of the same library APIs where practical.
+
+For an application integration example, see the [Rust library integration guide](https://vorlie.github.io/ani-cli-rs/development/using-as-a-library/).
 
 ## Quick links
 
