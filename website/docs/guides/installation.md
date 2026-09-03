@@ -44,7 +44,7 @@ ani-cli-rs = "0.9.6"
 Open PowerShell and run:
 
 ```powershell
-Invoke-WebRequest [https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1](https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1) -OutFile install.ps1
+Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.ps1 -OutFile install.ps1
 .\install.ps1
 Remove-Item .\install.ps1
 
@@ -90,7 +90,7 @@ This launches a per-user installer with an uninstall entry. It does not require 
 ## Linux
 
 ```sh
-curl -fsSL [https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh](https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh) -o install.sh
+curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh -o install.sh
 sh install.sh
 rm install.sh
 
@@ -112,7 +112,7 @@ Official Linux archives use musl so one release can work across common distribut
 Linux ARM64 is source-buildable but is not device-tested by the maintainer and has no official release archive:
 
 ```sh
-git clone [https://github.com/vorlie/ani-cli-rs.git](https://github.com/vorlie/ani-cli-rs.git)
+git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
 
@@ -127,7 +127,7 @@ The local `cargo release-linux-arm64` alias is intended for contributors with a 
 No official macOS release assets are provided. The source build and automatic IINA selection have been tested. Install the Rust toolchain and build locally:
 
 ```sh
-git clone [https://github.com/vorlie/ani-cli-rs.git](https://github.com/vorlie/ani-cli-rs.git)
+git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
 
@@ -146,7 +146,7 @@ Termux source builds are tested, but no Android release binary is published. Ins
 ```sh
 pkg update
 pkg install rust
-git clone [https://github.com/vorlie/ani-cli-rs.git](https://github.com/vorlie/ani-cli-rs.git)
+git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
 install -Dm755 target/release/ani-cli-rs "$PREFIX/bin/ani-cli-rs"
@@ -164,7 +164,7 @@ Run `ani-cli-rs "title"` to request mpv-android or `ani-cli-rs --vlc "title"` to
 Install a current stable Rust toolchain, then:
 
 ```console
-git clone [https://github.com/vorlie/ani-cli-rs.git](https://github.com/vorlie/ani-cli-rs.git)
+git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
 
@@ -190,7 +190,7 @@ cargo uninstall ani-cli-rs
 ### Portable Windows
 
 ```powershell
-Invoke-WebRequest [https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.ps1](https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.ps1) -OutFile uninstall.ps1
+Invoke-WebRequest https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.ps1 -OutFile uninstall.ps1
 .\uninstall.ps1
 Remove-Item .\uninstall.ps1
 
@@ -199,7 +199,7 @@ Remove-Item .\uninstall.ps1
 ### Linux
 
 ```sh
-curl -fsSL [https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.sh](https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.sh) -o uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/uninstall.sh -o uninstall.sh
 sh uninstall.sh
 rm uninstall.sh
 
