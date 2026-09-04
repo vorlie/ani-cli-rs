@@ -11,12 +11,14 @@ Start by identifying which stage failed:
 
 The distinction matters: reinstalling will not repair a provider outage, and changing providers will not fix a missing player executable.
 
+
 ## Installed but command not found
 
 Windows portable installations default to:
 
 ```text
 C:\Users\USER\.local\bin\ani-cli-rs.exe
+
 ```
 
 Check:
@@ -25,6 +27,7 @@ Check:
 Test-Path "$HOME\.local\bin\ani-cli-rs.exe"
 [Environment]::GetEnvironmentVariable("Path", "User")
 Get-Command ani-cli-rs.exe -ErrorAction SilentlyContinue
+
 ```
 
 Open a new PowerShell or Command Prompt after installation. The current terminal does not automatically inherit persistent `PATH` changes made by another process.
@@ -35,9 +38,14 @@ Linux:
 ls -l "$HOME/.local/bin/ani-cli-rs"
 printf '%s\n' "$PATH"
 command -v ani-cli-rs
+
 ```
 
-Source the profile modified by the installer or open a new shell.
+Source the updated profile to reload your `PATH` in the current terminal session:
+
+* **Bash:** `source ~/.profile` (or `source ~/.bashrc`)
+* **Zsh:** `source ~/.zshrc`
+* **Fish:** `fish_add_path ~/.local/bin`
 
 ## Windows installer says the architecture is unsupported
 

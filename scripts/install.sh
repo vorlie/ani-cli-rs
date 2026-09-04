@@ -76,13 +76,31 @@ install -m 755 "$binary_path" "$install_directory/ani-cli-rs"
 case ":$PATH:" in
     *":$install_directory:"*) ;;
     *)
-        profile=${ANI_CLI_RS_PROFILE:-"$HOME/.profile"}
+        # Detect target profile based on active shell or standard rc files
+        if [ -n "${ANI_CLI_RS_PROFILE:-}" ]; then
+            profile="$ANI_CLI_RS_PROFILE"
+        elif [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ]; then
+            profile="$HOME/.zshrc"
+        elif [ -n "${BASH_VERSION:-}" ] || [ -f "$HOME/.bashrc" ]; then
+            profile="$HOME/.bashrc"
+        elif [ -f "$HOME/.config/fish/config.fish" ]; then
+            profile="$HOME/.config/fish/config.fish"
+        else
+            profile="$HOME/.profile"
+        fi
+
         {
             echo ""
             echo "# ani-cli-rs installer"
-            echo "export PATH=\"$install_directory:\$PATH\""
+            if echo "$profile" | grep -q "config.fish"; then
+                echo "fish_add_path $install_directory"
+            else
+                echo "export PATH=\"$install_directory:\$PATH\""
+            fi
         } >> "$profile"
-        echo "Added $install_directory to PATH in $profile; open a new shell or source that file."
+
+        echo "Added $install_directory to PATH in $profile."
+        echo "Run 'source $profile' or restart your shell to apply changes."
         ;;
 esac
 
