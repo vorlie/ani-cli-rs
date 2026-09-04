@@ -27,18 +27,27 @@ impl I18n {
     }
 
     fn error_en(&self, error: &AniError) -> String {
+        const DOCS_TROUBLESHOOTING: &str =
+            "https://vorlie.github.io/ani-cli-rs/support/troubleshooting/";
         match error {
             AniError::Network(msg) => format!("Network request failed: {msg}"),
-            AniError::Provider(msg) => format!("Provider returned invalid data: {msg}"),
+            AniError::Provider(msg) => format!(
+                "Provider returned invalid data: {msg}\n\
+                 Help: {DOCS_TROUBLESHOOTING}#search-works-but-sources-fail"
+            ),
             AniError::Catalog { provider, message } => {
-                format!("{provider} catalog error: {message}")
+                format!(
+                    "{provider} catalog error: {message}\n\
+                     Help: {DOCS_TROUBLESHOOTING}#search-works-but-sources-fail"
+                )
             }
             AniError::ProviderRateLimited {
                 provider,
                 retry_after_seconds,
             } => {
                 format!(
-                    "{provider} is rate limiting requests. Try again in {retry_after_seconds} seconds."
+                    "{provider} is rate limiting requests. Try again in {retry_after_seconds} seconds.\n\
+                     Help: {DOCS_TROUBLESHOOTING}#search-works-but-sources-fail"
                 )
             }
 
@@ -53,28 +62,38 @@ impl I18n {
             AniError::Json(msg) => format!("Could not process response data: {msg}"),
             AniError::Url(msg) => format!("Invalid URL: {msg}"),
 
-            AniError::DownloadNoDownloader => {
-                "HLS downloads require yt-dlp or FFmpeg to be installed and available in PATH."
-                    .to_string()
-            }
-            AniError::DownloadFailed => "HLS download failed.".to_string(),
+            AniError::DownloadNoDownloader => format!(
+                "HLS downloads require yt-dlp or FFmpeg to be installed and available in PATH.\n\
+                Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
+            ),
+            AniError::DownloadFailed => format!(
+                "HLS download failed.\n\
+                Help: {DOCS_TROUBLESHOOTING}#part-remains-after-a-download"
+            ),
 
             AniError::HistoryStateDirectory => {
                 "Could not determine where to store history data.".to_string()
             }
 
-            AniError::PlayerNotFound => {
-                "Player executable not found. Make sure your configured player is installed."
-                    .to_string()
-            }
+            AniError::PlayerNotFound => format!(
+                "Player executable not found. Make sure your configured player is installed.\n\
+                Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
+            ),
 
-            AniError::PlayerLaunchFailed => "Could not launch the player.".to_string(),
+            AniError::PlayerLaunchFailed => format!(
+                "Could not launch the player.\n\
+                Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
+            ),
 
-            AniError::PlayerExitFailed => "Player exited with an error.".to_string(),
+            AniError::PlayerExitFailed => format!(
+                "Player exited with an error.\n\
+                Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
+            ),
 
-            AniError::PlayerAndroidTerminalRequired => {
-                "Android HLS playback requires an interactive Termux terminal.".to_string()
-            }
+            AniError::PlayerAndroidTerminalRequired => format!(
+                "Android HLS playback requires an interactive Termux terminal.\n\
+                Help: {DOCS_TROUBLESHOOTING}#termux-playback-stops-after-returning-to-the-terminal"
+            ),
 
             AniError::InputSelectionOutOfRange => "Selection is out of range.".to_string(),
 
@@ -86,11 +105,15 @@ impl I18n {
 
             AniError::UnavailableNoResults => "No results found.".to_string(),
 
-            AniError::UnavailableNoStreams => {
-                "No streams are available for this episode.".to_string()
-            }
+            AniError::UnavailableNoStreams => format!(
+                "No streams are available for this episode.\n\
+                Help: {DOCS_TROUBLESHOOTING}#search-works-but-sources-fail"
+            ),
 
-            AniError::UnavailableNoEpisodes => "No episodes are available.".to_string(),
+            AniError::UnavailableNoEpisodes => format!(
+                "No episodes are available.\n\
+                Help: {DOCS_TROUBLESHOOTING}#search-works-but-sources-fail"
+            ),
         }
     }
 }

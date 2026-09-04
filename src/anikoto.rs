@@ -237,7 +237,10 @@ impl AnikotoClient {
                 Err(error) => failures.push(error.to_string()),
             }
         }
-        eprintln!("Anikoto native source resolution failures: {}", failures.join("; "));
+        eprintln!(
+            "Anikoto native source resolution failures: {}",
+            failures.join("; ")
+        );
         Err(AniError::UnavailableNoEpisodes)
     }
 

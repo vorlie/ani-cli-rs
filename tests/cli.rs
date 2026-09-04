@@ -21,7 +21,7 @@ fn invalid_mode_fails_before_network_for_episodes() {
         .args(["episodes", "show", "--mode", "invalid"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("Invalid input"));
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn removed_allanime_provider_is_rejected() {
         .args(["--provider", "allanime", "search", "example"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("invalid value 'allanime' for '--provider <PROVIDER>'"));
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn invalid_default_anikoto_ids_fail_before_network() {
         .args(["--provider", "anikoto", "episodes", "not-a-valid-id"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("Invalid input"));
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn environment_can_select_anikoto() {
         .args(["episodes", "not a slug"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("Invalid input"));
 }
 
 #[test]
@@ -83,14 +83,14 @@ fn prefixed_ids_auto_route_to_anikoto() {
         .args(["episodes", "anikoto:not-base64"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("Invalid input"));
 
     Command::cargo_bin("ani-cli-rs")
         .unwrap()
         .args(["episodes", "anikoto2:not-base64"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid input"));
+        .stderr(predicate::str::contains("Invalid input"));
 }
 
 #[test]

@@ -230,19 +230,17 @@ async fn handle_inner(
     request: Request<Incoming>,
 ) -> Result<Response<Full<Bytes>>> {
     if request.method() == Method::OPTIONS {
-        return Ok(
-            Response::builder()
-                .status(StatusCode::NO_CONTENT)
-                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
-                .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Range, Content-Type")
-                .header(
-                    header::ACCESS_CONTROL_EXPOSE_HEADERS,
-                    "Content-Length, Content-Range, Accept-Ranges",
-                )
-                .body(Full::new(Bytes::new()))
-                .expect("valid CORS response"),
-        );
+        return Ok(Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+            .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Range, Content-Type")
+            .header(
+                header::ACCESS_CONTROL_EXPOSE_HEADERS,
+                "Content-Length, Content-Range, Accept-Ranges",
+            )
+            .body(Full::new(Bytes::new()))
+            .expect("valid CORS response"));
     }
 
     if request.method() != Method::GET && request.method() != Method::HEAD {
@@ -727,11 +725,7 @@ fn strip_png_wrapper(bytes: Vec<u8>) -> (Vec<u8>, bool) {
     (bytes, false)
 }
 
-fn response(
-    status: StatusCode,
-    content_type: &str,
-    bytes: Vec<u8>,
-) -> Response<Full<Bytes>> {
+fn response(status: StatusCode, content_type: &str, bytes: Vec<u8>) -> Response<Full<Bytes>> {
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, content_type)
@@ -739,7 +733,10 @@ fn response(
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
         .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Range, Content-Type")
-        .header(header::ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Range, Accept-Ranges")
+        .header(
+            header::ACCESS_CONTROL_EXPOSE_HEADERS,
+            "Content-Length, Content-Range, Accept-Ranges",
+        )
         .body(Full::new(Bytes::from(bytes)))
         .expect("valid relay response")
 }

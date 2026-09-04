@@ -1304,8 +1304,7 @@ fn adjacent_episode(episodes: &[String], current: &str, delta: isize) -> Result<
     let index = episodes
         .iter()
         .position(|value| value == current)
-        .ok_or_else(|| AniError::InputInvalidEpisode)?
-        as isize
+        .ok_or_else(|| AniError::InputInvalidEpisode)? as isize
         + delta;
     episodes
         .get(index as usize)
@@ -1546,14 +1545,8 @@ mod tests {
     fn download_preflight_aggregates_only_unavailable_episodes() {
         let preflight = collect_download_preflight(vec![
             ("1".into(), Ok(prepared("1"))),
-            (
-                "2".into(),
-                Err(AniError::UnavailableNoEpisodes),
-            ),
-            (
-                "4".into(),
-                Err(AniError::UnavailableNoEpisodes),
-            ),
+            ("2".into(), Err(AniError::UnavailableNoEpisodes)),
+            ("4".into(), Err(AniError::UnavailableNoEpisodes)),
         ])
         .unwrap();
         let DownloadPreflight::Unavailable(values) = preflight else {

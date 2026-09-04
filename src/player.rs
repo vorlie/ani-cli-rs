@@ -226,15 +226,18 @@ impl Player {
         if self.is_android_player() {
             return self.play_android(stream, title, force_attached).await;
         }
-        
+
         // Validate that the player executable exists before attempting to launch
         // Only check if it's an absolute path or relative path with directory components
         let needs_validation = self.options.executable.components().count() > 1;
         if needs_validation && !self.options.executable.exists() {
-            eprintln!("Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.", self.options.executable.display());
+            eprintln!(
+                "Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
+                self.options.executable.display()
+            );
             return Err(AniError::PlayerNotFound);
         }
-        
+
         let mut command = Command::new(&self.options.executable);
         let attached = self.options.no_detach || force_attached;
         let args = self.command_args_inner(stream, title, attached);
@@ -280,7 +283,10 @@ impl Player {
                         error = %error,
                         "failed to launch player in attached mode",
                     );
-                    eprintln!("Could not launch {}: {error}", self.options.executable.display());
+                    eprintln!(
+                        "Could not launch {}: {error}",
+                        self.options.executable.display()
+                    );
                     Err(AniError::PlayerLaunchFailed)
                 }
             }
@@ -309,7 +315,10 @@ impl Player {
                         error = %error,
                         "failed to launch player in detached mode",
                     );
-                    eprintln!("Could not launch {}: {error}", self.options.executable.display());
+                    eprintln!(
+                        "Could not launch {}: {error}",
+                        self.options.executable.display()
+                    );
                     Err(AniError::PlayerLaunchFailed)
                 }
             }
