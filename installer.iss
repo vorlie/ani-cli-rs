@@ -18,6 +18,7 @@ ChangesEnvironment=yes
 
 [Files]
 Source: "{#SourceDir}\ani-cli-rs.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\ani-cli-rs-gui.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{#SourceDir}\ani-cli-rs-gui.exe'))
 Source: "{#SourceDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 

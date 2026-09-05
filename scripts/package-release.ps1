@@ -1,5 +1,6 @@
 param(
-    [string]$Target = "x86_64-pc-windows-msvc"
+    [string]$Target = "x86_64-pc-windows-msvc",
+    [string[]]$Features = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +28,16 @@ $metadata = cargo metadata --no-deps --format-version 1 --manifest-path (Join-Pa
 $version = $metadata.packages[0].version
 $binaryName = if ($Target -like "*windows*") { "ani-cli-rs.exe" } else { "ani-cli-rs" }
 $binaryPath = Join-Path $projectRoot "target/$Target/release/$binaryName"
+$binaryNames = @($binaryName)
+$guiFeatureEnabled = $Features -and ($Features | Where-Object { $_ -eq "gui" -or $_ -like "gui,*" -or $_ -like "*,gui" }).Count -gt 0
+if ($guiFeatureEnabled) {
+    $guiBinaryName = if ($Target -like "*windows*") { "ani-cli-rs-gui.exe" } else { "ani-cli-rs-gui" }
+    $guiBinaryPath = Join-Path $projectRoot "target/$Target/release/$guiBinaryName"
+    if (-not (Test-Path -LiteralPath $guiBinaryPath)) {
+        throw "GUI binary not found: $guiBinaryPath"
+    }
+    $binaryNames += $guiBinaryName
+}
 $packageName = "ani-cli-rs-$version-$Target"
 $packageDirectory = Join-Path $projectRoot "dist/$packageName"
 $archivePath = Join-Path $projectRoot "dist/$packageName.zip"
@@ -41,17 +52,39 @@ if (-not $licensePath) {
 }
 
 if ($Target -like "*windows*") {
-    & (Join-Path $PSScriptRoot "build-windows.ps1") -Target $Target
+    & (Join-Path $PSScriptRoot "build-windows.ps1") -Target $Target -Features $Features
 }
 else {
-    cargo build --locked --release --target $Target --manifest-path (Join-Path $projectRoot "Cargo.toml")
+    $cargoArgs = @(
+        "build",
+        "--locked",
+        "--release",
+        "--target",
+        $Target,
+        "--manifest-path",
+        (Join-Path $projectRoot "Cargo.toml")
+    )
+
+    if ($Features -and $Features.Count -gt 0) {
+        $cargoArgs += @("--features")
+        $cargoArgs += $Features
+    }
+
+    Write-Host "Building $Target with features: $($Features -join ', ')"
+    cargo @cargoArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Cargo build failed for $Target."
     }
 }
 
 New-Item -ItemType Directory -Force $packageDirectory | Out-Null
-Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $packageDirectory $binaryName) -Force
+foreach ($artifactName in $binaryNames) {
+    $artifactPath = Join-Path $projectRoot "target/$Target/release/$artifactName"
+    if (-not (Test-Path -LiteralPath $artifactPath)) {
+        throw "Expected release binary not found: $artifactPath"
+    }
+    Copy-Item -LiteralPath $artifactPath -Destination (Join-Path $packageDirectory $artifactName) -Force
+}
 Copy-Item -LiteralPath (Join-Path $projectRoot "README.md") -Destination (Join-Path $packageDirectory "README.md") -Force
 Copy-Item -LiteralPath $licensePath -Destination (Join-Path $packageDirectory "LICENSE") -Force
 

@@ -1,5 +1,6 @@
 param(
-    [string]$Target = "x86_64-pc-windows-msvc"
+    [string]$Target = "x86_64-pc-windows-msvc",
+    [string[]]$Features = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,7 +25,23 @@ $env:RUSTFLAGS = $null
 $env:CARGO_ENCODED_RUSTFLAGS = (@($flags) + $remapFlag) -join $separator
 
 try {
-    cargo build --locked --release --target $Target --manifest-path (Join-Path $projectRoot "Cargo.toml")
+    $cargoArgs = @(
+        "build",
+        "--locked",
+        "--release",
+        "--target",
+        $Target,
+        "--manifest-path",
+        (Join-Path $projectRoot "Cargo.toml")
+    )
+
+    if ($Features -and $Features.Count -gt 0) {
+        $cargoArgs += @("--features")
+        $cargoArgs += $Features
+    }
+
+    Write-Host "Building $Target with features: $($Features -join ', ')"
+    cargo @cargoArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Cargo build failed for $Target."
     }
