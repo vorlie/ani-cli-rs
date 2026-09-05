@@ -1,1 +1,8 @@
-feat: show download size, speed, percentage, and ETA progress
+fix: restore live Anikoto.cz search and provider flow
+
+- restore Anikoto.cz filter-page search as the canonical source
+- fix stale provider/default behavior and improve live result parsing
+- deduplicate parsed results and normalize watch URLs/slug handling
+- support sort variants and generated filter URLs for real catalog results
+- polish CLI help styling without breaking non-TTY/script output
+- verify the patch release with the full test suite

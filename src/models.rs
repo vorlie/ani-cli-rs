@@ -65,10 +65,64 @@ impl FromStr for TranslationType {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub enum SearchSort {
+    #[serde(rename = "latest-updated")]
+    LatestUpdated,
+    #[serde(rename = "latest-added")]
+    LatestAdded,
+    Score,
+    #[serde(rename = "name-az")]
+    NameAz,
+    #[serde(rename = "release-date")]
+    ReleaseDate,
+    #[serde(rename = "most-viewed")]
+    MostViewed,
+    #[serde(rename = "number_of_episodes")]
+    NumberOfEpisodes,
+}
+
+impl fmt::Display for SearchSort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::LatestUpdated => "latest-updated",
+            Self::LatestAdded => "latest-added",
+            Self::Score => "score",
+            Self::NameAz => "name-az",
+            Self::ReleaseDate => "release-date",
+            Self::MostViewed => "most-viewed",
+            Self::NumberOfEpisodes => "number_of_episodes",
+        })
+    }
+}
+
+impl FromStr for SearchSort {
+    type Err = AniError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        let normalized = value.trim().to_ascii_lowercase().replace('_', "-");
+        match normalized.as_str() {
+            "latest-updated" => Ok(Self::LatestUpdated),
+            "latest-added" => Ok(Self::LatestAdded),
+            "score" => Ok(Self::Score),
+            "name-az" | "nameaz" => Ok(Self::NameAz),
+            "release-date" | "releasedate" => Ok(Self::ReleaseDate),
+            "most-viewed" | "mostviewed" => Ok(Self::MostViewed),
+            "number-of-episodes" | "numberofepisodes" => Ok(Self::NumberOfEpisodes),
+            _ => Err(AniError::Input(format!(
+                "search sort must be one of: latest-updated, latest-added, score, name-az, release-date, most-viewed, number_of_episodes; got {value}"
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SearchOptions {
     /// Include titles marked as adult by the selected catalog.
     pub allow_adult: bool,
+    /// Preferred ordering for provider-specific search filter URLs.
+    #[serde(default)]
+    pub sort: Option<SearchSort>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -229,6 +283,28 @@ mod tests {
             headers: RequestHeaders::default(),
             subtitles: vec![],
         }
+    }
+
+    #[test]
+    fn default_provider_is_anikoto_cz() {
+        assert_eq!(CatalogProvider::default(), CatalogProvider::Anikoto2);
+    }
+
+    #[test]
+    fn parse_search_sort_variants() {
+        assert_eq!(
+            SearchSort::from_str("latest-updated").unwrap(),
+            SearchSort::LatestUpdated
+        );
+        assert_eq!(SearchSort::from_str("score").unwrap(), SearchSort::Score);
+        assert_eq!(
+            SearchSort::from_str("number_of_episodes").unwrap(),
+            SearchSort::NumberOfEpisodes
+        );
+        assert_eq!(
+            SearchSort::from_str("most-viewed").unwrap(),
+            SearchSort::MostViewed
+        );
     }
 
     #[test]
