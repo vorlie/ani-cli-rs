@@ -13,8 +13,8 @@ use serde_json::Value;
 use url::Url;
 
 use crate::{
-    AniError, CatalogProvider, RequestHeaders, Result, SearchOptions, SearchResult, StreamLink,
-    SubtitleTrack, TranslationType,
+    AniError, CatalogProvider, RequestHeaders, Result, SearchOptions, SearchResult, SearchSort,
+    StreamLink, SubtitleTrack, TranslationType,
     models::{sort_episodes, sort_streams},
 };
 
@@ -149,25 +149,63 @@ impl AnikotoCzClient {
         &self,
         query: &str,
         _mode: TranslationType,
-        _options: SearchOptions,
+        options: SearchOptions,
     ) -> Result<Vec<SearchResult>> {
         let query = query.trim();
         if query.is_empty() {
             return Err(AniError::InputEmptyQuery);
         }
-        let mut url = Url::parse(&format!("{}/ajax/anime/search", self.inner.base))?;
-        url.query_pairs_mut().append_pair("keyword", query);
-        let payload = self
-            .get_json(url.as_str(), &self.inner.base, true, None)
-            .await?;
-        let result = provider_result(&payload, "search")?;
-        let html = result
-            .as_str()
-            .or_else(|| result.get("html").and_then(Value::as_str))
-            .ok_or_else(|| {
-                AniError::Provider("Anikoto.cz search response contained no markup".into())
-            })?;
-        parse_search(&self.inner.base, html)
+
+        let mut request_urls = filter_search_urls_for_base(&self.inner.base, query, options.sort);
+        let mut ajax_url = Url::parse(&format!("{}/ajax/anime/search", self.inner.base))?;
+        ajax_url.query_pairs_mut().append_pair("keyword", query);
+        request_urls.push(ajax_url.to_string());
+
+        for request_url in request_urls {
+            let html = if request_url.contains("/filter") {
+                match self
+                    .get_text(
+                        &request_url,
+                        &self.inner.base,
+                        false,
+                        None,
+                        MAX_RESPONSE_BYTES,
+                    )
+                    .await
+                {
+                    Ok(html) => html,
+                    Err(_) => continue,
+                }
+            } else {
+                let payload = match self
+                    .get_json(&request_url, &self.inner.base, true, None)
+                    .await
+                {
+                    Ok(payload) => payload,
+                    Err(_) => continue,
+                };
+                let result = match provider_result(&payload, "search") {
+                    Ok(result) => result,
+                    Err(_) => continue,
+                };
+                match result
+                    .as_str()
+                    .or_else(|| result.get("html").and_then(Value::as_str))
+                {
+                    Some(html) => html.into(),
+                    None => continue,
+                }
+            };
+
+            let results = parse_search(&self.inner.base, &html)?;
+            if !results.is_empty() {
+                return Ok(results);
+            }
+        }
+
+        Err(AniError::Provider(format!(
+            "Anikoto.cz returned no search results for {query:?}"
+        )))
     }
 
     pub async fn episodes(&self, show_id: &str, mode: TranslationType) -> Result<Vec<String>> {
@@ -529,18 +567,74 @@ fn decode_id(value: &str) -> Result<AnikotoCzId> {
     Ok(decoded)
 }
 
+fn filter_search_urls_for_base(
+    base: &str,
+    query: &str,
+    preferred_sort: Option<SearchSort>,
+) -> Vec<String> {
+    let base = Url::parse(base).unwrap_or_else(|_| Url::parse("https://anikoto.cz").unwrap());
+    let defaults = [
+        SearchSort::LatestUpdated,
+        SearchSort::LatestAdded,
+        SearchSort::Score,
+        SearchSort::NameAz,
+        SearchSort::ReleaseDate,
+        SearchSort::MostViewed,
+        SearchSort::NumberOfEpisodes,
+    ];
+
+    let mut urls = Vec::new();
+    let mut seen = HashSet::new();
+    let candidates = std::iter::once(None)
+        .chain(std::iter::once(preferred_sort))
+        .chain(defaults.into_iter().map(Some));
+
+    for sort in candidates {
+        let sort_value = sort.map(|value| value.to_string());
+        if !seen.insert(sort_value.clone()) {
+            continue;
+        }
+
+        let mut url = base.join("/filter").unwrap();
+        {
+            let mut query_pairs = url.query_pairs_mut();
+            query_pairs.clear();
+            query_pairs.append_pair("keyword", query);
+            query_pairs.append_pair("type", "");
+            query_pairs.append_pair("ep_min", "");
+            query_pairs.append_pair("ep_max", "");
+            if let Some(sort) = sort_value.as_deref() {
+                query_pairs.append_pair("sort", sort);
+            }
+        }
+        urls.push(url.to_string());
+    }
+    urls
+}
+
+#[cfg(test)]
+fn filter_search_urls(query: &str) -> Vec<String> {
+    filter_search_urls_for_base("https://anikoto.cz", query, None)
+}
+
 fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
     let document = Html::parse_fragment(html);
-    let item = Selector::parse("a.item")
-        .map_err(|_| AniError::Provider("invalid search selector".into()))?;
+    let list = Selector::parse("#list-items .item")
+        .map_err(|_| AniError::Provider("invalid result list selector".into()))?;
     let title_selector = Selector::parse(".name, .d-title")
         .map_err(|_| AniError::Provider("invalid title selector".into()))?;
     let base = Url::parse(base)?;
     let expected_host = base.host_str().unwrap_or_default();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
-    for element in document.select(&item) {
-        let Some(href) = element.value().attr("href") else {
+    let anchor = Selector::parse("a[href]")
+        .map_err(|_| AniError::Provider("invalid anchor selector".into()))?;
+    for element in document.select(&list) {
+        let Some(href) = element
+            .select(&anchor)
+            .next()
+            .and_then(|anchor| anchor.value().attr("href"))
+        else {
             continue;
         };
         let Ok(url) = base.join(href) else {
@@ -553,6 +647,7 @@ fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
             .path()
             .trim_end_matches('/')
             .strip_prefix("/watch/")
+            .and_then(|slug| slug.split('/').next())
             .filter(|slug| validate_slug(slug).is_ok())
         else {
             continue;
@@ -1009,13 +1104,46 @@ mod tests {
     #[test]
     fn parses_search_and_deduplicates_slugs() {
         let html = r#"
-            <a class="item" href="/watch/black-torch-1d364"><div class="name">Black Torch</div></a>
-            <a class="item" href="/watch/black-torch-1d364"><span class="d-title">Duplicate</span></a>
+            <div id="list-items" class="ani items">
+              <div class="item"><a href="/watch/black-torch-1d364"><div class="name">Black Torch</div></a></div>
+              <div class="item"><a href="/watch/black-torch-1d364"><span class="d-title">Duplicate</span></a></div>
+            </div>
         "#;
         let values = parse_search("https://anikoto.cz", html).unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].name, "Black Torch");
         assert_eq!(values[0].provider, CatalogProvider::Anikoto2);
+    }
+
+    #[test]
+    fn ignores_unrelated_items_outside_the_filter_result_list() {
+        let html = r#"
+            <div class="top-rated">
+              <a class="item" href="/watch/dorohedoro-season-2-bqfe6"><span class="name">Dorohedoro Season 2</span></a>
+            </div>
+            <div id="list-items" class="ani items">
+              <div class="item"><a href="/watch/one-piece-episode-of-luffy-hand-island-adventure-br7lf/ep-1"><span class="d-title">One Piece: Episode of Luffy - Hand Island Adventure</span></a></div>
+            </div>
+        "#;
+        let values = parse_search("https://anikoto.cz", html).unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(
+            values[0].name,
+            "One Piece: Episode of Luffy - Hand Island Adventure"
+        );
+    }
+
+    #[test]
+    fn builds_supported_filter_sort_urls() {
+        let urls = filter_search_urls("one piece");
+        assert_eq!(urls.len(), 8);
+        assert!(urls[0].contains("/filter?keyword=one+piece"));
+        assert!(urls.iter().any(|url| url.contains("sort=latest-updated")));
+        assert!(urls.iter().any(|url| url.contains("sort=name-az")));
+        assert!(
+            urls.iter()
+                .any(|url| url.contains("sort=number_of_episodes"))
+        );
     }
 
     #[test]

@@ -22,7 +22,7 @@ pub use history::{HistoryEntry, HistoryStore};
 pub use hls_relay::{HlsRelay, relay_stream, relay_stream_without_hls_subtitles};
 pub use i18n::{I18n, Locale};
 pub use models::{
-    CatalogProvider, RequestHeaders, SearchOptions, SearchResult, StreamLink, SubtitleTrack,
-    TranslationType, choose_quality, expand_episode_selection,
+    CatalogProvider, RequestHeaders, SearchOptions, SearchResult, SearchSort, StreamLink,
+    SubtitleTrack, TranslationType, choose_quality, expand_episode_selection,
 };
 pub use player::{Player, PlayerKind, PlayerOptions};

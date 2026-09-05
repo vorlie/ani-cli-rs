@@ -1,42 +1,34 @@
-# ani-cli-rs 0.9.4
- 
-This release fixes video player launching issues.
- 
+# ani-cli-rs 0.10.2
+
+This patch release fixes the search flow and brings the default provider back in line with the live Anikoto.cz catalog used by real results.
+
+## Highlights
+
+- Restored the Anikoto.cz filter page as the canonical search source
+- Fixed stale API assumptions that dropped real matches or returned incomplete results
+- Improved result parsing and deduplication for the live filter page
+- Kept the CLI help output readable and styled for interactive terminals without breaking non-TTY/script output
+- Preserved log file behavior and environment overrides for troubleshooting
+
 ## Fixes
- 
-- Fixed video player launching failures by adding HLS relay cache settings to mpv arguments
-- Added mpv cache parameters (`--cache=yes`, `--cache-secs=120`, `--demuxer-max-bytes=512MiB`, `--demuxer-max-back-bytes=256MiB`) for relayed streams
-- Enhanced player executable validation to provide better error messages when players are not found
-- Improved process detachment behavior to match koto-cli's nohup behavior
-- Fixed URL argument ordering to ensure the stream URL is passed as the last argument to mpv
-- These changes resolve playback issues with Anikoto provider's HLS streams and relay mechanism
 
-## Debug logging improvements
+- Fixed provider default drift and made the current catalog behavior consistent again
+- Corrected parsing of `#list-items` results to ignore unrelated markup outside the real result list
+- Deduplicated duplicate show entries and normalized slug handling for watch URLs
+- Improved search sort handling and generated filter URLs for supported sort variants
+- Updated CLI styling to use auto color detection so scripts and tests keep plain output while terminals still get the warm rust/orange theme
 
-The application includes comprehensive debug logging through the `tracing` crate to help with troubleshooting and issue reporting:
+## Notes
 
-- Player launch logging with executable details, process IDs, and command arguments
-- Stream resolution logging with URLs, HLS status, and provider information
-- HLS relay logging with bind addresses, upstream hosts, and resource registration
-- Network request logging for provider API calls and stream fetching
-- Error context logging with structured metadata for better debugging
-
-Enable debug logging with:
-```console
-RUST_LOG=ani_cli_rs=debug,ani_cli=debug ani-cli-rs "anime title"
-```
-
-For full stream resolution and relay tracing:
-```console
-RUST_LOG=ani_cli_rs=trace,ani_cli=trace ani-cli-rs "anime title"
-```
+- The live Anikoto.cz search flow is now the default path for real catalog data
+- This is a patch release; no breaking CLI or API changes are expected for existing users
 
 ## Upgrade
- 
+
 Existing installations can update with:
- 
+
 ```console
 ani-cli-rs update
 ```
- 
-**Full changelog:** [0.9.3...0.9.4](https://github.com/vorlie/ani-cli-rs/compare/0.9.3...0.9.4)
+
+**Full changelog:** [0.10.1...0.10.2](https://github.com/vorlie/ani-cli-rs/compare/0.10.1...0.10.2)

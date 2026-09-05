@@ -3,21 +3,69 @@ use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 use ani_lib::{
     AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, HistoryEntry,
     HistoryStore, I18n, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
-    StreamLink, TranslationType, choose_quality, download_stream, expand_episode_selection,
-    provider_from_show_id,
+    SearchSort, StreamLink, TranslationType, choose_quality, download_stream,
+    expand_episode_selection, provider_from_show_id,
 };
 #[cfg(debug_assertions)]
 use ani_lib::{RequestHeaders, SubtitleTrack};
-use clap::{Args, Parser, Subcommand};
+use clap::{
+    Args, ColorChoice, Parser, Subcommand,
+    builder::Styles,
+    builder::styling::{AnsiColor, Color, Style},
+};
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 mod updater;
+mod log;
 
 const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_RS_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS, an Android media player from Termux, and mpv on other desktops by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
-const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigate menus\n  j / k                  Move down / up in action menus\n  h / l                  Change pages in action menus\n  Space / Enter          Select or toggle an item\n  Type                    Filter fuzzy anime/episode menus\n  Escape                 Go back immediately from a fuzzy menu\n  q / Escape             Leave an ordinary action menu\n\nEXAMPLES:\n  ani-cli-rs frieren\n  ani-cli-rs --provider anikoto2 \"black torch\"\n  ani-cli-rs --allow-adult \"search query\"\n  ani-cli-rs --dub -q 720p \"cowboy bebop\"\n  ani-cli-rs -S 1 -e 2-4 \"one piece\"\n  ani-cli-rs --continue\n  ani-cli-rs --download -e 1 \"anime title\"\n  ani-cli-rs search --allow-adult --json \"search query\"\n  ani-cli-rs links --json SHOW_ID 1 --quality 1080p\n\nTERMUX:\n  Install an Android video player; do not use the terminal VLC package.\n  --vlc requests Android VLC when explicit intents work. A compatibility fallback\n  uses Android's media handler instead. Keep Termux open for relayed HLS playback.\n\nENVIRONMENT:\n  ANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\n  ANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\n  ANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_RS_PROVIDER\n\nDEBUG LOGGING:\n  RUST_LOG=ani_cli_rs=debug,ani_cli=debug    verbose launch diagnostics\n  RUST_LOG=ani_cli_rs=trace,ani_cli=trace    full stream resolution + relay tracing\n  RUST_LOG=warn                              only warnings and errors (default off)\n\nOfficial prebuilt releases are provided for Windows and Linux. Tested macOS and Termux builds are compiled from source.";
+const AFTER_HELP: &str = concat!(
+    "\u{1b}[38;5;208mKEYBOARD NAVIGATION:\u{1b}[0m\n",
+    "  \u{1b}[38;5;214mArrow keys / Tab\u{1b}[0m       Navigate menus\n",
+    "  \u{1b}[38;5;214mj / k\u{1b}[0m                  Move down / up in action menus\n",
+    "  \u{1b}[38;5;214mh / l\u{1b}[0m                  Change pages in action menus\n",
+    "  \u{1b}[38;5;214mSpace / Enter\u{1b}[0m          Select or toggle an item\n",
+    "  \u{1b}[38;5;214mType\u{1b}[0m                    Filter fuzzy anime/episode menus\n",
+    "  \u{1b}[38;5;214mEscape\u{1b}[0m                 Go back immediately from a fuzzy menu\n",
+    "  \u{1b}[38;5;214mq / Escape\u{1b}[0m             Leave an ordinary action menu\n\n",
+    "\u{1b}[38;5;208mEXAMPLES:\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs frieren\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs --provider anikoto2 \"black torch\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs --allow-adult \"search query\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs --dub -q 720p \"cowboy bebop\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs -S 1 -e 2-4 \"one piece\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs --continue\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs --download -e 1 \"anime title\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs search --allow-adult --json \"search query\"\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mani-cli-rs links --json SHOW_ID 1 --quality 1080p\u{1b}[0m\n\n",
+    "\u{1b}[38;5;208mTERMUX:\u{1b}[0m\n",
+    "  \u{1b}[38;5;214mInstall an Android video player; do not use the terminal VLC package.\u{1b}[0m\n",
+    "  \u{1b}[38;5;214m--vlc requests Android VLC when explicit intents work. A compatibility fallback\u{1b}[0m\n",
+    "  \u{1b}[38;5;214muses Android's media handler instead. Keep Termux open for relayed HLS playback.\u{1b}[0m\n\n",
+    "\u{1b}[38;5;208mENVIRONMENT:\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mANI_CLI_MODE, ANI_CLI_PLAYER, ANI_CLI_DOWNLOAD_DIR, ANI_CLI_QUALITY,\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mANI_CLI_HIST_DIR, ANI_CLI_ALLOW_ADULT, ANI_CLI_MULTI_SELECTION,\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mANI_CLI_NO_DETACH, ANI_CLI_EXIT_AFTER_PLAY, ANI_CLI_RS_PROVIDER\u{1b}[0m\n\n",
+    "\u{1b}[38;5;208mDEBUG LOGGING:\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mRUST_LOG=ani_cli_rs=debug,ani_cli=debug\u{1b}[0m    \u{1b}[38;5;214mverbose launch diagnostics\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mRUST_LOG=ani_cli_rs=trace,ani_cli=trace\u{1b}[0m    \u{1b}[38;5;214mfull stream resolution + relay tracing\u{1b}[0m\n",
+    "  \u{1b}[38;5;203mRUST_LOG=warn\u{1b}[0m                              \u{1b}[38;5;214monly warnings and errors (default off)\u{1b}[0m\n\n",
+    "\u{1b}[38;5;214mOfficial prebuilt releases are provided for Windows and Linux. Tested macOS and Termux builds are compiled from source.\u{1b}[0m"
+);
+
+fn cli_styles() -> Styles {
+    Styles::styled()
+        .header(Style::new().bold().fg_color(Some(Color::Ansi(AnsiColor::Yellow))))
+        .usage(Style::new().bold().fg_color(Some(Color::Ansi(AnsiColor::BrightYellow))))
+        .literal(Style::new().bold().fg_color(Some(Color::Ansi(AnsiColor::BrightRed))))
+        .placeholder(Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red))))
+        .valid(Style::new().fg_color(Some(Color::Ansi(AnsiColor::BrightYellow))))
+        .invalid(Style::new().bold().fg_color(Some(Color::Ansi(AnsiColor::Red))))
+        .error(Style::new().bold().fg_color(Some(Color::Ansi(AnsiColor::Red))))
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -25,7 +73,9 @@ const AFTER_HELP: &str = "KEYBOARD NAVIGATION:\n  Arrow keys / Tab       Navigat
     version,
     about = "Browse, play, and download anime from Anikoto providers",
     long_about = LONG_ABOUT,
-    after_help = AFTER_HELP
+    after_help = AFTER_HELP,
+    color = ColorChoice::Auto,
+    styles = cli_styles()
 )]
 struct Cli {
     #[command(subcommand)]
@@ -66,6 +116,9 @@ struct Cli {
     /// Include titles marked as adult in catalog search results.
     #[arg(short = 'a', long, env = "ANI_CLI_ALLOW_ADULT")]
     allow_adult: bool,
+    /// Preferred Anikoto.cz sort order for the filter page.
+    #[arg(long, env = "ANI_CLI_SEARCH_SORT", value_parser = SearchSort::from_str)]
+    sort: Option<SearchSort>,
     /// Keep the player attached and wait for it to exit.
     #[arg(long, env = "ANI_CLI_NO_DETACH")]
     no_detach: bool,
@@ -130,6 +183,9 @@ struct SearchArgs {
     /// Include titles marked as adult in search results.
     #[arg(short = 'a', long, env = "ANI_CLI_ALLOW_ADULT")]
     allow_adult: bool,
+    /// Preferred Anikoto.cz sort order for the filter page.
+    #[arg(long, value_parser = SearchSort::from_str)]
+    sort: Option<SearchSort>,
     /// Print structured JSON instead of tab-separated text.
     #[arg(long)]
     json: bool,
@@ -192,11 +248,7 @@ struct ActionArgs {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
-        .compact()
-        .init();
+    log::init();
     if let Err(error) = run(Cli::parse()).await {
         let i18n = I18n::default();
         eprintln!("\x1b[31merror:\x1b[0m {}", i18n.error(&error));
@@ -205,6 +257,10 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<()> {
+    let effective_provider = cli.provider.or_else(|| {
+        cli.sort.map(|_| CatalogProvider::Anikoto2)
+    });
+
     if cli.update {
         return updater::run(false).await;
     }
@@ -228,7 +284,7 @@ async fn run(cli: Cli) -> Result<()> {
 
     let clients = ProviderClients::new(cli.demo_mode())?;
     if let Some(command) = cli.command {
-        return run_command(&clients, cli.provider, command).await;
+        return run_command(&clients, effective_provider, command).await;
     }
     let history = HistoryStore::platform_default()?;
     if cli.delete {
@@ -286,11 +342,12 @@ async fn run(cli: Cli) -> Result<()> {
                 };
                 let results = clients
                     .search_with_options(
-                        cli.provider.unwrap_or_default(),
+                        effective_provider.unwrap_or_default(),
                         &query,
                         mode,
                         SearchOptions {
                             allow_adult: cli.allow_adult,
+                            sort: cli.sort,
                         },
                     )
                     .await?;
@@ -632,6 +689,7 @@ async fn run_command(
                     TranslationType::from_str(&args.mode)?,
                     SearchOptions {
                         allow_adult: args.allow_adult,
+                        sort: args.sort,
                     },
                 )
                 .await?;
