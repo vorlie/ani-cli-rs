@@ -16,6 +16,7 @@ use clap::{
 use dialoguer::{FuzzySelect, Input, MultiSelect, Select, theme::ColorfulTheme};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
+use semver::Version;
 
 mod updater;
 mod log;
@@ -267,6 +268,14 @@ async fn run(cli: Cli) -> Result<()> {
     if let Some(Commands::Update { check }) = cli.command.as_ref() {
         return updater::run(*check).await;
     }
+    // Spawn a background, best-effort check for newer releases and notify in-terminal.
+    // Non-blocking and silently ignored on error.
+    if std::io::stdout().is_terminal() {
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        tokio::spawn(async move {
+            let _ = check_and_notify_new_version(&current_version).await;
+        });
+    }
     if cli.next_episode_countdown {
         let query = if cli.query.is_empty() {
             if !std::io::stdin().is_terminal() {
@@ -491,6 +500,40 @@ async fn display_next_episode_schedule(query: &str) -> Result<()> {
             println!("{line}");
         }
         println!("---");
+    }
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+}
+
+async fn check_and_notify_new_version(current_version: &str) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("ani-cli-rs/", env!("CARGO_PKG_VERSION")))
+        .build()?;
+    let resp = client
+        .get("https://api.github.com/repos/vorlie/ani-cli-rs/releases/latest")
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| AniError::Unavailable("failed to fetch release info".into()))?;
+    let release: GithubRelease = resp.json().await.map_err(|_| AniError::Unavailable("invalid release info".into()))?;
+    let latest = release.tag_name.trim_start_matches('v');
+    let latest_ver = match Version::parse(latest) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+    let current_ver = match Version::parse(current_version) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+    if latest_ver > current_ver {
+        eprintln!(
+            "\x1b[33mA new version of ani-cli-rs is available: {} (current: {}). Run `ani-cli-rs -U` to update.\x1b[0m",
+            latest, current_version
+        );
     }
     Ok(())
 }
