@@ -9,6 +9,8 @@ Thank you for helping improve ani-cli-rs. Bug fixes, compatibility improvements,
 - Open an issue before implementing a large CLI redesign, public API break, new network provider, or plugin architecture change.
 - Do not commit credentials, cookies, complete signed media URLs, personal filesystem paths, or raw debug dumps containing private information.
 
+> **Using AI?** See [AI_POLICY.md](AI_POLICY.md) for the project's expectations around AI-assisted contributions.
+
 ## Development setup
 
 Install the current stable Rust toolchain. The package uses Rust edition 2024.
