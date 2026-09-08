@@ -455,7 +455,7 @@ impl AnikotoCzClient {
         data_id: &str,
         mode: TranslationType,
     ) -> Result<Value> {
-        let mut source_url = Url::parse(&format!("{origin}/stream/getSources"))?;
+        let mut source_url = Url::parse(&format!("{origin}/stream/getSourcesNew"))?;
         // VidTube shares episode IDs across languages and defaults to sub.
         source_url
             .query_pairs_mut()
@@ -1115,7 +1115,7 @@ mod tests {
             let embed_url = format!("https://vidtube.site/stream/example/{language}");
             let media_url = format!("https://media.example/{language}.m3u8");
             Mock::given(method("GET"))
-                .and(path("/stream/getSources"))
+                .and(path("/stream/getSourcesNew"))
                 .and(query_param("id", "42"))
                 .and(query_param("type", language))
                 .and(header("Referer", embed_url.as_str()))
