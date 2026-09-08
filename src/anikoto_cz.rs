@@ -286,7 +286,7 @@ impl AnikotoCzClient {
         for server in servers {
             match self.resolve_server(&server, &episode_url).await {
                 Ok(embed) => match self
-                    .extract_native(&embed, &server.label, &episode_url)
+                    .extract_native(&embed, &server.label, &episode_url, mode)
                     .await
                 {
                     Ok(mut resolved) => streams.append(&mut resolved),
@@ -387,6 +387,7 @@ impl AnikotoCzClient {
         embed_url: &str,
         provider: &str,
         episode_url: &str,
+        mode: TranslationType,
     ) -> Result<Vec<StreamLink>> {
         let embed = validate_remote_url(embed_url)?;
         let host = embed.host_str().unwrap_or_default();
@@ -403,10 +404,8 @@ impl AnikotoCzClient {
         let data_id = parse_data_id(&html).ok_or_else(|| {
             AniError::Provider("embed did not expose a playable source id".into())
         })?;
-        let mut source_url = Url::parse(&format!("{origin}/stream/getSources"))?;
-        source_url.query_pairs_mut().append_pair("id", &data_id);
         let payload = self
-            .get_json(source_url.as_str(), embed.as_str(), true, Some(&origin))
+            .get_native_sources(&origin, embed.as_str(), &data_id, mode)
             .await?;
         let (sources, subtitles) = parse_sources(&payload);
         if sources.is_empty() {
@@ -447,6 +446,23 @@ impl AnikotoCzClient {
             }
         }
         Ok(streams)
+    }
+
+    async fn get_native_sources(
+        &self,
+        origin: &str,
+        embed_url: &str,
+        data_id: &str,
+        mode: TranslationType,
+    ) -> Result<Value> {
+        let mut source_url = Url::parse(&format!("{origin}/stream/getSources"))?;
+        // VidTube shares episode IDs across languages and defaults to sub.
+        source_url
+            .query_pairs_mut()
+            .append_pair("id", data_id)
+            .append_pair("type", &mode.to_string());
+        self.get_json(source_url.as_str(), embed_url, true, Some(origin))
+            .await
     }
 
     async fn expand_hls(
@@ -1085,6 +1101,41 @@ fn cache_put<T>(cache: &Mutex<HashMap<String, Cached<T>>>, key: String, value: T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method, path, query_param},
+    };
+
+    #[tokio::test]
+    async fn native_source_requests_preserve_language_for_shared_episode_ids() {
+        let server = MockServer::start().await;
+        let client = AnikotoCzClient::new().unwrap();
+
+        for (mode, language) in [(TranslationType::Sub, "sub"), (TranslationType::Dub, "dub")] {
+            let embed_url = format!("https://vidtube.site/stream/example/{language}");
+            let media_url = format!("https://media.example/{language}.m3u8");
+            Mock::given(method("GET"))
+                .and(path("/stream/getSources"))
+                .and(query_param("id", "42"))
+                .and(query_param("type", language))
+                .and(header("Referer", embed_url.as_str()))
+                .and(header("Origin", server.uri().as_str()))
+                .and(header("X-Requested-With", "XMLHttpRequest"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "sources": {"file": media_url}
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let payload = client
+                .get_native_sources(&server.uri(), &embed_url, "42", mode)
+                .await
+                .unwrap();
+            let (sources, _) = parse_sources(&payload);
+            assert_eq!(sources[0].0, media_url);
+        }
+    }
 
     #[test]
     fn ids_round_trip_and_raw_slugs_are_supported() {

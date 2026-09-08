@@ -28,7 +28,7 @@ search query
     -> GET /ajax/server?get=<server token>
     -> MegaPlay or VidTube embed
     -> read numeric data-id
-    -> GET <embed origin>/stream/getSources?id=<data-id>
+    -> GET <embed origin>/stream/getSources?id=<data-id>&type=<sub|dub>
     -> validate native media and subtitle URLs
     -> expand HLS master qualities
     -> play/download through the scoped KotoCDN relay
@@ -91,8 +91,10 @@ Supported embeds expose:
 ```
 
 The numeric ID is sent to the embed origin's `/stream/getSources` endpoint
-with the embed URL as referer and its origin as `Origin`. Nested
-`sources`/`source`/`links` objects and `file`/`url`/`src` values are normalized
+with the embed URL as referer and its origin as `Origin`.
+The selected language is sent as `type=sub` or `type=dub`; VidTube can reuse
+the same numeric ID for both languages and defaults to sub when `type` is absent.
+Nested `sources`/`source`/`links` objects and `file`/`url`/`src` values are normalized
 defensively. Subtitle tracks are read from `tracks`, `captions`, and
 `subtitles`.
 
