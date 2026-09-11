@@ -233,7 +233,7 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
             .last()
             .cloned()
             .map(|v| vec![v])
-            .ok_or_else(|| AniError::UnavailableNoEpisodes);
+            .ok_or(AniError::UnavailableNoEpisodes);
     }
     if trimmed.contains(char::is_whitespace) {
         let requested: Vec<_> = trimmed.split_whitespace().map(str::to_owned).collect();
@@ -252,11 +252,11 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
         let start_index = available
             .iter()
             .position(|v| v == start)
-            .ok_or_else(|| AniError::InputInvalidEpisode)?;
+            .ok_or(AniError::InputInvalidEpisode)?;
         let end_index = available
             .iter()
             .position(|v| v == end)
-            .ok_or_else(|| AniError::InputInvalidEpisode)?;
+            .ok_or(AniError::InputInvalidEpisode)?;
         if start_index > end_index {
             eprintln!("Episode range is reversed");
             return Err(AniError::InputInvalidEpisode);

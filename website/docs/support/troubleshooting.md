@@ -127,6 +127,29 @@ Likely causes:
 
 Resolve the source again. Test the other catalog, another network, or a VPN only if allowed by your network policy. FortiGuard and similar filters may classify catalog or media hosts as adult/streaming content even when ani-cli-rs itself works correctly.
 
+## Player doesn't start or stream fails to load
+
+If the player doesn't start or shows errors loading the stream, it may be due to:
+
+1. **Player executable not found**: Verify the player is installed and in PATH (see above)
+2. **New streaming domains**: Some providers may use new domains not yet in the HLS relay allowlist
+
+Try forcing all streams through the HLS relay using the `--ignore-host-lists` flag:
+
+```bash
+ani-cli-rs --ignore-host-lists "anime title"
+# or short form
+ani-cli-rs -I "anime title"
+```
+
+You can also set this permanently via environment variable:
+
+```bash
+export ANI_CLI_IGNORE_HOST_LISTS=1
+```
+
+This forces all HLS streams through the local relay regardless of the host domain, which can resolve issues with new or unrecognized streaming domains.
+
 ## mpv, VLC, Syncplay, aria2c, yt-dlp, or FFmpeg not found
 
 Verify the executable directly:
@@ -138,6 +161,8 @@ Get-Command mpv.exe, vlc.exe, syncplay.exe, aria2c.exe, yt-dlp.exe, ffmpeg.exe -
 ```sh
 command -v mpv vlc syncplay aria2c yt-dlp ffmpeg
 ```
+
+If the player is not found in PATH, ani-cli-rs will now display a clear error message with installation instructions. You can also override the player executable using the `ANI_CLI_PLAYER` environment variable or the `--player` flag for the play subcommand.
 
 ## Termux opens terminal VLC or cannot find an Android player
 

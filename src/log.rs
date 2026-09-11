@@ -1,12 +1,6 @@
-use std::{
-    fs::OpenOptions,
-    io::Write,
-    path::PathBuf,
-};
+use std::{fs::OpenOptions, io::Write, path::PathBuf};
 
-use tracing_subscriber::{
-    EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
-};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn log_file_path() -> PathBuf {
     if let Ok(path) = std::env::var("ANI_CLI_LOG_PATH") {
@@ -28,7 +22,6 @@ pub fn init() {
 
     let file = OpenOptions::new()
         .create(true)
-        .write(true)
         .append(true)
         .open(&log_path);
 

@@ -25,6 +25,7 @@ Run `ani-cli-rs --help` or `ani-cli-rs <COMMAND> --help` for the authoritative h
 | `-a`, `--allow-adult` | Permit adult-marked search results |
 | `--no-detach` | Keep the player attached and wait for exit |
 | `--exit-after-play` | Treat an attached player's failure as a CLI failure |
+| `-I`, `--ignore-host-lists` | Force all streams through HLS relay regardless of host allowlist |
 | `-N`, `--nextep-countdown` | Show release schedule and exit |
 | `-U`, `--update` | Install the latest release |
 | `-p`, `--provider VALUE` | Select `anikoto` (default) or `anikoto2` (Anikoto.cz) |
@@ -87,7 +88,7 @@ Resolved URLs may be signed and temporary. Do not publish complete JSON output i
 ani-cli-rs play SHOW_ID EPISODE [OPTIONS]
 ```
 
-Options include `--mode`, `-q/--quality`, `--title`, `--player`, and `--no-detach`. `--player` is an executable path, not a shell command.
+Options include `--mode`, `-q/--quality`, `--title`, `--player`, `--no-detach`, and `--ignore-host-lists`. `--player` is an executable path, not a shell command.
 
 ## `download`
 

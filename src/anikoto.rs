@@ -724,6 +724,11 @@ pub(crate) fn is_megaplay_media_host(host: &str) -> bool {
         "lostproject.club",
         "voltara.click",
         "kotocdn.site",
+        "megap.shiora.top",
+        "shiora.top",
+        "megap.kotocdn.site",
+        "megap.akirax.buzz",
+        "akirax.buzz",
     ]
     .iter()
     .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))

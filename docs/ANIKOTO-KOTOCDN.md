@@ -315,6 +315,11 @@ mewstream.buzz
 lostproject.club
 voltara.click
 kotocdn.site
+megap.shiora.top
+shiora.top
+megap.kotocdn.site
+megap.akirax.buzz
+akirax.buzz
 ```
 
 Host matching must accept the exact domain or a real subdomain:
@@ -324,6 +329,16 @@ hostname === domain || hostname.endsWith(`.${domain}`)
 ```
 
 Do not use a loose substring or plain `endsWith(domain)` check without the dot boundary. For example, `evilmegaplay.buzz` must not be trusted as a MegaPlay host.
+
+If you encounter new domains that are not in the allowlist, you can force all streams through the HLS relay using the `--ignore-host-lists` flag:
+
+```bash
+ani-cli-rs --ignore-host-lists "anime title"
+# or short form
+ani-cli-rs -I "anime title"
+```
+
+This bypasses the domain allowlist check and routes all HLS streams through the local relay, which can resolve issues with new or unrecognized streaming domains.
 
 ## 9. Electron request interception and CORS
 

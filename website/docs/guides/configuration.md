@@ -15,6 +15,7 @@ ani-cli-rs uses command-line options for one-off choices and environment variabl
 | `ANI_CLI_MULTI_SELECTION` | Open episode multi-select directly |
 | `ANI_CLI_NO_DETACH` | Wait for the player |
 | `ANI_CLI_EXIT_AFTER_PLAY` | Propagate attached player failures |
+| `ANI_CLI_IGNORE_HOST_LISTS` | Force all streams through HLS relay regardless of host allowlist |
 | `ANI_CLI_RS_INSTALL_DIR` | Installer/uninstaller target directory |
 | `ANI_CLI_RS_PROFILE` | Unix profile modified by install/uninstall scripts |
 | `ANI_CLI_RS_PROVIDER` | Changes the default provider used by `ani-cli-rs`. Available providers: `anikoto`/`anikoto2` |

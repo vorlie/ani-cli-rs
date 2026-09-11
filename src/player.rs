@@ -45,6 +45,7 @@ pub struct PlayerOptions {
     pub kind: PlayerKind,
     pub no_detach: bool,
     pub exit_after_play: bool,
+    pub force_hls_relay: bool,
 }
 
 impl PlayerOptions {
@@ -67,6 +68,7 @@ impl PlayerOptions {
             kind: PlayerKind::Mpv,
             no_detach: env_bool("ANI_CLI_NO_DETACH"),
             exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
+            force_hls_relay: false,
         }
     }
 
@@ -79,6 +81,7 @@ impl PlayerOptions {
             kind: PlayerKind::Iina,
             no_detach: env_bool("ANI_CLI_NO_DETACH"),
             exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
+            force_hls_relay: false,
         }
     }
 
@@ -88,6 +91,7 @@ impl PlayerOptions {
             kind: PlayerKind::AndroidMpv,
             no_detach: true,
             exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
+            force_hls_relay: false,
         }
     }
 }
@@ -110,11 +114,12 @@ impl Player {
     /// Useful for debug logs and error messages.
     pub fn describe(&self) -> String {
         format!(
-            "{} ({}) [no_detach={}, exit_after_play={}]",
+            "{} ({}) [no_detach={}, exit_after_play={}, force_hls_relay={}]",
             self.options.executable.display(),
             self.options.kind,
             self.options.no_detach,
             self.options.exit_after_play,
+            self.options.force_hls_relay,
         )
     }
 
@@ -188,7 +193,10 @@ impl Player {
             subtitles = stream.subtitles.len(),
             "playback requested",
         );
-        if requires_hls_relay(stream) || (self.is_android_player() && stream.hls) {
+        if self.options.force_hls_relay
+            || crate::requires_hls_relay(stream)
+            || (self.is_android_player() && stream.hls)
+        {
             debug!(
                 title = %title,
                 player = %self.options.kind.to_string(),
@@ -228,14 +236,26 @@ impl Player {
         }
 
         // Validate that the player executable exists before attempting to launch
-        // Only check if it's an absolute path or relative path with directory components
+        // For simple names (e.g., "mpv"), check if they exist in PATH
         let needs_validation = self.options.executable.components().count() > 1;
-        if needs_validation && !self.options.executable.exists() {
-            eprintln!(
-                "Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
-                self.options.executable.display()
-            );
-            return Err(AniError::PlayerNotFound);
+        if needs_validation {
+            if !self.options.executable.exists() {
+                eprintln!(
+                    "Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
+                    self.options.executable.display()
+                );
+                return Err(AniError::PlayerNotFound);
+            }
+        } else {
+            // For simple names, check if they can be found in PATH
+            use which::which;
+            if which(&self.options.executable).is_err() {
+                eprintln!(
+                    "Player executable '{}' not found in PATH. Please install the player or set ANI_CLI_PLAYER environment variable.",
+                    self.options.executable.display()
+                );
+                return Err(AniError::PlayerNotFound);
+            }
         }
 
         let mut command = Command::new(&self.options.executable);
@@ -563,7 +583,7 @@ fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
         args.push(format!("--slang={}", track.label));
     }
     // Add cache settings for HLS relay streams
-    if stream.hls && crate::anikoto::requires_hls_relay(stream) {
+    if stream.hls && requires_hls_relay(stream) {
         args.push("--cache=yes".into());
         args.push("--cache-secs=120".into());
         args.push("--demuxer-max-bytes=512MiB".into());
@@ -613,6 +633,7 @@ mod tests {
             kind: PlayerKind::Mpv,
             no_detach: true,
             exit_after_play: false,
+            force_hls_relay: false,
         });
         let stream = StreamLink {
             url: "https://media/a.m3u8".into(),
@@ -640,6 +661,7 @@ mod tests {
             kind: PlayerKind::Iina,
             no_detach: false,
             exit_after_play: false,
+            force_hls_relay: false,
         });
         let stream = StreamLink {
             url: "https://media/a.m3u8".into(),
@@ -682,6 +704,7 @@ mod tests {
             kind: PlayerKind::Iina,
             no_detach: false,
             exit_after_play: false,
+            force_hls_relay: false,
         });
         let stream = StreamLink {
             url: "https://media/a.m3u8".into(),
@@ -706,6 +729,7 @@ mod tests {
             kind: PlayerKind::AndroidMpv,
             no_detach: true,
             exit_after_play: false,
+            force_hls_relay: false,
         });
         let stream = StreamLink {
             url: "http://127.0.0.1:43123/stream-token".into(),
@@ -743,6 +767,7 @@ mod tests {
             kind: PlayerKind::AndroidVlc,
             no_detach: true,
             exit_after_play: false,
+            force_hls_relay: false,
         });
         let stream = StreamLink {
             url: "https://media.example/episode.m3u8".into(),

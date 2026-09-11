@@ -62,6 +62,38 @@ It is currently unsigned and performs provider requests, local HLS relay traffic
 
 Each episode can use different third-party hosts. Some copies are deleted, blocked, expired, or protected by changed provider protocols. ani-cli-rs cannot produce a stream when every upstream source is unavailable.
 
+## When should I use `--ignore-host-lists`?
+
+Use the `--ignore-host-lists` (or `-I`) flag when you encounter playback issues that might be caused by new or unrecognized streaming domains. This forces all HLS streams through the local relay regardless of the host domain, which can resolve issues with:
+
+- New provider domains not yet in the HLS relay allowlist
+- Temporary domain changes by streaming providers
+- Provider switching to backup domains
+
+```bash
+ani-cli-rs --ignore-host-lists "anime title"
+# or short form
+ani-cli-rs -I "anime title"
+```
+
+You can also set this permanently via environment variable:
+
+```bash
+export ANI_CLI_IGNORE_HOST_LISTS=1
+```
+
+Note that forcing relay for all streams may slightly increase startup time compared to direct playback for known safe domains.
+
+## Why does the player fail to start with "executable not found"?
+
+ani-cli-rs now validates that the player executable exists before attempting to launch it. If mpv (or your configured player) is not installed or not in your system PATH, you'll see a clear error message with installation instructions.
+
+Solutions:
+- Install the player (mpv, VLC, etc.)
+- Ensure the player directory is in your PATH
+- Set the `ANI_CLI_PLAYER` environment variable to the full path
+- Use the `--player` flag to specify the executable path directly
+
 ## Does `--allow-adult` bypass router filtering?
 
 No. It only changes catalog filtering where the selected provider supplies adult metadata. DNS, FortiGuard, parental controls, antivirus, or ISP filtering still applies.

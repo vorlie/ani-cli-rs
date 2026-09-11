@@ -77,7 +77,7 @@ impl GuiState {
             active_relay: None,
             anikoto_client: AnikotoClient::new().ok(),
             anikoto_cz_client: AnikotoCzClient::new().ok(),
-            player: Player::new(PlayerOptions::default_player()),
+            player: Player::new(PlayerOptions::default_player()), // GUI uses default force_hls_relay=false
         }
     }
 
