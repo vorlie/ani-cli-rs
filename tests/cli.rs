@@ -52,7 +52,9 @@ fn removed_allanime_provider_is_rejected() {
         .args(["--provider", "allanime", "search", "example"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid value 'allanime' for '--provider <PROVIDER>'"));
+        .stderr(predicate::str::contains(
+            "invalid value 'allanime' for '--provider <PROVIDER>'",
+        ));
 }
 
 #[test]

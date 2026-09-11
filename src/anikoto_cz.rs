@@ -241,7 +241,7 @@ impl AnikotoCzClient {
             .episodes
             .iter()
             .find(|value| value.number == episode_number)
-            .ok_or_else(|| AniError::UnavailableNoEpisodes)?;
+            .ok_or(AniError::UnavailableNoEpisodes)?;
         let available = match mode {
             TranslationType::Sub => selected.sub,
             TranslationType::Dub => selected.dub,
@@ -391,9 +391,17 @@ impl AnikotoCzClient {
     ) -> Result<Vec<StreamLink>> {
         let embed = validate_remote_url(embed_url)?;
         let host = embed.host_str().unwrap_or_default();
-        if !["megaplay.buzz", "vidtube.site", "megap.shiora.top", "shiora.top", "megap.kotocdn.site", "megap.akirax.buzz", "akirax.buzz"]
-            .iter()
-            .any(|domain| host_matches(host, domain))
+        if ![
+            "megaplay.buzz",
+            "vidtube.site",
+            "megap.shiora.top",
+            "shiora.top",
+            "megap.kotocdn.site",
+            "megap.akirax.buzz",
+            "akirax.buzz",
+        ]
+        .iter()
+        .any(|domain| host_matches(host, domain))
         {
             return Err(AniError::Provider(format!("unsupported embed host {host}")));
         }
@@ -1099,6 +1107,26 @@ fn cache_put<T>(cache: &Mutex<HashMap<String, Cached<T>>>, key: String, value: T
     }
 }
 
+pub fn requires_hls_relay(stream: &StreamLink) -> bool {
+    stream.hls
+        && Url::parse(&stream.url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .is_some_and(|host| {
+                [
+                    "megaplay.buzz",
+                    "megap.shiora.top",
+                    "shiora.top",
+                    "megap.kotocdn.site",
+                    "kotocdn.site",
+                    "megap.akirax.buzz",
+                    "akirax.buzz",
+                ]
+                .iter()
+                .any(|domain| host_matches(&host, domain))
+            })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1268,24 +1296,4 @@ mod tests {
         assert!(!streams.is_empty());
         assert!(streams.iter().any(|stream| stream.hls));
     }
-}
-
-pub fn requires_hls_relay(stream: &StreamLink) -> bool {
-    stream.hls
-        && Url::parse(&stream.url)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_owned))
-            .is_some_and(|host| {
-                [
-                    "megaplay.buzz",
-                    "megap.shiora.top",
-                    "shiora.top",
-                    "megap.kotocdn.site",
-                    "kotocdn.site",
-                    "megap.akirax.buzz", 
-                    "akirax.buzz"
-                ]
-                .iter()
-                .any(|domain| host_matches(&host, domain))
-            })
 }

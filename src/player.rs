@@ -193,7 +193,10 @@ impl Player {
             subtitles = stream.subtitles.len(),
             "playback requested",
         );
-        if self.options.force_hls_relay || crate::requires_hls_relay(stream) || (self.is_android_player() && stream.hls) {
+        if self.options.force_hls_relay
+            || crate::requires_hls_relay(stream)
+            || (self.is_android_player() && stream.hls)
+        {
             debug!(
                 title = %title,
                 player = %self.options.kind.to_string(),
@@ -246,7 +249,7 @@ impl Player {
         } else {
             // For simple names, check if they can be found in PATH
             use which::which;
-            if !which(&self.options.executable).is_ok() {
+            if which(&self.options.executable).is_err() {
                 eprintln!(
                     "Player executable '{}' not found in PATH. Please install the player or set ANI_CLI_PLAYER environment variable.",
                     self.options.executable.display()
