@@ -14,8 +14,19 @@ mod player;
 #[cfg(feature = "gui")]
 pub mod gui;
 
-pub use anikoto::{AnikotoClient, AnikotoClientBuilder, provider_from_show_id, requires_hls_relay};
-pub use anikoto_cz::{AnikotoCzClient, AnikotoCzClientBuilder};
+pub use anikoto::{AnikotoClient, AnikotoClientBuilder, provider_from_show_id, requires_hls_relay as anikoto_requires_hls_relay};
+pub use anikoto_cz::{AnikotoCzClient, AnikotoCzClientBuilder, requires_hls_relay as anikoto_cz_requires_hls_relay};
+
+/// Unified function to check if a stream requires HLS relay
+/// This checks both anikoto and anikoto_cz domains
+pub fn requires_hls_relay(stream: &StreamLink) -> bool {
+    anikoto_requires_hls_relay(stream) || anikoto_cz_requires_hls_relay(stream)
+}
+
+/// Force all streams through HLS relay regardless of host allowlist
+pub fn force_hls_relay(stream: &StreamLink) -> bool {
+    stream.hls
+}
 pub use download::{DownloadOptions, download_stream};
 pub use error::{AniError, Result};
 pub use history::{HistoryEntry, HistoryStore};

@@ -1,6 +1,6 @@
 [package]
 name = "ani-cli-rs"
-version = "0.10.4"
+version = "0.10.5-patch"
 edition = "2024"
 license = "GPL-3.0-only"
 description = "Cross-platform Rust port of ani-cli with Anikoto providers and a reusable provider/playback library"
@@ -53,6 +53,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 semver = "1"
+which = "7"
 
 [dev-dependencies]
 assert_cmd = "2"

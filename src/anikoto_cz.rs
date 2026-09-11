@@ -391,7 +391,7 @@ impl AnikotoCzClient {
     ) -> Result<Vec<StreamLink>> {
         let embed = validate_remote_url(embed_url)?;
         let host = embed.host_str().unwrap_or_default();
-        if !["megaplay.buzz", "vidtube.site"]
+        if !["megaplay.buzz", "vidtube.site", "megap.shiora.top", "shiora.top", "megap.kotocdn.site", "megap.akirax.buzz", "akirax.buzz"]
             .iter()
             .any(|domain| host_matches(host, domain))
         {
@@ -1056,6 +1056,7 @@ fn validate_remote_url(value: &str) -> Result<Url> {
 
 fn host_matches(host: &str, domain: &str) -> bool {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
+    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
     host == domain || host.ends_with(&format!(".{domain}"))
 }
 
@@ -1267,4 +1268,24 @@ mod tests {
         assert!(!streams.is_empty());
         assert!(streams.iter().any(|stream| stream.hls));
     }
+}
+
+pub fn requires_hls_relay(stream: &StreamLink) -> bool {
+    stream.hls
+        && Url::parse(&stream.url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_owned))
+            .is_some_and(|host| {
+                [
+                    "megaplay.buzz",
+                    "megap.shiora.top",
+                    "shiora.top",
+                    "megap.kotocdn.site",
+                    "kotocdn.site",
+                    "megap.akirax.buzz", 
+                    "akirax.buzz"
+                ]
+                .iter()
+                .any(|domain| host_matches(&host, domain))
+            })
 }
