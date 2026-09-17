@@ -60,7 +60,29 @@ Do not rewrite an entire file when a localized change is sufficient.
 
 Providers are external systems and may change without notice.
 
-When fixing a provider:
+### Verify the breakage before fixing it
+
+Before modifying a provider implementation, confirm that the reported
+failure is still reproducible.
+
+Provider behavior can change independently of ani-cli-rs. A provider may
+temporarily break, change its API, or restore previous behavior without any
+change to this repository.
+
+If a previously reported failure is no longer reproducible:
+
+* Investigate whether the provider changed or recovered
+* Compare the current behavior with the known failing behavior when possible
+* Test multiple representative cases
+* Do not make speculative code changes solely because a previous failure
+  was reported
+* If no code change is currently necessary, document the finding instead
+
+Do not manufacture a fix for a provider that has already recovered.
+
+### Fixing provider breakages
+
+When a provider breakage is confirmed:
 
 1. Reproduce the failure.
 2. Inspect the current provider behavior.
@@ -69,8 +91,6 @@ When fixing a provider:
 5. Make the smallest practical fix.
 6. Test the affected functionality.
 7. Test related functionality when the change could affect it.
-
-Do not speculate about provider behavior when it can be investigated directly.
 
 ### Agentic provider investigation
 
