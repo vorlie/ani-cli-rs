@@ -62,23 +62,19 @@ Providers are external systems and may change without notice.
 
 ### Verify the breakage before fixing it
 
-Before modifying a provider implementation, confirm that the reported
-failure is still reproducible.
+Before modifying a provider implementation, confirm that the reported failure is still reproducible.
 
-Provider behavior can change independently of ani-cli-rs. A provider may
-temporarily break, change its API, or restore previous behavior without any
-change to this repository.
+Provider behavior can change independently of ani-cli-rs. A provider may temporarily break, change its API, or restore previous behavior without any change to this repository.
 
 If a previously reported failure is no longer reproducible:
 
 * Investigate whether the provider changed or recovered
 * Compare the current behavior with the known failing behavior when possible
 * Test multiple representative cases
-* Do not make speculative code changes solely because a previous failure
-  was reported
+* Do not make speculative code changes solely because a previous failure was reported
 * If no code change is currently necessary, document the finding instead
 
-Do not manufacture a fix for a provider that has already recovered.
+**Do not manufacture a fix for a provider that has already recovered.**
 
 ### Fixing provider breakages
 
@@ -91,6 +87,20 @@ When a provider breakage is confirmed:
 5. Make the smallest practical fix.
 6. Test the affected functionality.
 7. Test related functionality when the change could affect it.
+
+### Provider work must remain scoped
+
+Provider fixes are maintenance work and should normally be isolated from unrelated features or refactors.
+
+If a provider issue is discovered while working on another task:
+
+* Do not automatically expand the current task to include the provider fix.
+* Record the provider issue and its reproduction details.
+* Keep unrelated provider changes out of the current implementation unless the issue directly blocks the requested work.
+* Prefer creating a separate branch or change for the provider fix.
+
+A provider investigation may be extensive when the provider behavior requires it, but the resulting code change should remain focused on the confirmed problem.
+
 
 ### Agentic provider investigation
 
