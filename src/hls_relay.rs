@@ -106,7 +106,10 @@ async fn relay_stream_inner(
     expose_subtitles_in_hls: bool,
 ) -> Result<(HlsRelay, StreamLink)> {
     if !stream.hls {
-        return Err(AniError::Input("only HLS streams can be relayed".into()));
+        return Err(AniError::InvalidInput {
+            input: stream.url.clone(),
+            reason: "only HLS streams can be relayed".to_string(),
+        });
     }
     let upstream = validate_upstream(&stream.url)?;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -353,12 +356,17 @@ async fn handle_inner(
         || bytes.starts_with(b"#EXTM3U");
     if playlist {
         if bytes.len() > MAX_PLAYLIST_BYTES {
-            return Err(AniError::Provider(
-                "provider playlist exceeds the 2 MiB relay limit".into(),
-            ));
+            return Err(AniError::ProviderResponseSizeExceeded {
+                provider: "HLS relay upstream".to_string(),
+                size: bytes.len(),
+                limit: MAX_PLAYLIST_BYTES,
+            });
         }
-        let text = String::from_utf8(bytes)
-            .map_err(|_| AniError::Provider("provider playlist is not UTF-8".into()))?;
+        let text = String::from_utf8(bytes).map_err(|error| AniError::ProviderInvalidResponse {
+            provider: "HLS relay upstream".to_string(),
+            message: "provider playlist is not UTF-8".to_string(),
+            source: Some(Box::new(error)),
+        })?;
         let rewritten = rewrite_playlist(state, &registered, &text)?;
         let rewritten = if registered.kind == ResourceKind::EntryPlaylist {
             expose_subtitles(state, &registered, &text, rewritten)?
@@ -596,10 +604,15 @@ fn relay_reference(
     reference: &str,
     kind: ResourceKind,
 ) -> Result<String> {
-    let resolved = parent
-        .url
-        .join(reference)
-        .map_err(|error| AniError::Provider(format!("invalid playlist URL: {error}")))?;
+    let resolved =
+        parent
+            .url
+            .join(reference)
+            .map_err(|error| AniError::ProviderInvalidResponse {
+                provider: "HLS relay upstream".to_string(),
+                message: format!("invalid playlist URL: {error}"),
+                source: Some(Box::new(error)),
+            })?;
     validate_url(&resolved)?;
     let token = register(state, resolved, parent.headers.clone(), kind)?;
     Ok(local_url(state.base, &token))
@@ -624,9 +637,11 @@ fn register(
     }
     let mut resources = state.resources.lock().expect("relay registry poisoned");
     if resources.len() >= MAX_RESOURCES {
-        return Err(AniError::Provider(
-            "provider playlist contains too many resources".into(),
-        ));
+        return Err(AniError::ProviderInvalidResponse {
+            provider: "HLS relay upstream".to_string(),
+            message: "provider playlist contains too many resources".to_string(),
+            source: None,
+        });
     }
     let count = state.counter.fetch_add(1, Ordering::Relaxed);
     let token =
@@ -691,23 +706,27 @@ fn corrected_content_type(registered: &Registered, upstream: &str, stripped: boo
 }
 
 fn validate_upstream(value: &str) -> Result<Url> {
-    let url =
-        Url::parse(value).map_err(|error| AniError::Input(format!("invalid HLS URL: {error}")))?;
+    let url = Url::parse(value).map_err(|error| AniError::InvalidInput {
+        input: value.to_string(),
+        reason: format!("invalid HLS URL: {error}"),
+    })?;
     validate_url(&url)?;
     Ok(url)
 }
 
 fn validate_url(url: &Url) -> Result<()> {
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(AniError::Provider(
-            "credential-bearing playlist URLs are not allowed".into(),
-        ));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "credential-bearing playlist URLs are not allowed".to_string(),
+        });
     }
     let loopback = url
         .host_str()
         .is_some_and(|host| host == "127.0.0.1" || host == "localhost" || host == "::1");
     if url.scheme() != "https" && !(cfg!(test) && loopback && url.scheme() == "http") {
-        return Err(AniError::Provider("relay resources must use HTTPS".into()));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "relay resources must use HTTPS".to_string(),
+        });
     }
     Ok(())
 }
@@ -1152,7 +1171,10 @@ mod tests {
     #[test]
     fn rejects_non_https_remote_resources() {
         let error = validate_upstream("http://example.com/master.m3u8").unwrap_err();
-        assert!(matches!(error, AniError::Provider(_)));
+        assert!(matches!(
+            error,
+            AniError::ProviderUrlValidationFailed { .. }
+        ));
     }
 
     #[test]
@@ -1181,6 +1203,6 @@ mod tests {
             ResourceKind::Segment,
         )
         .unwrap_err();
-        assert!(matches!(error, AniError::Provider(_)));
+        assert!(matches!(error, AniError::ProviderInvalidResponse { .. }));
     }
 }

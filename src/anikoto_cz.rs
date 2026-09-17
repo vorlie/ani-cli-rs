@@ -5,6 +5,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use cbc::cipher::{BlockModeDecrypt, KeyIvInit};
 use regex::Regex;
 use reqwest::{Client, Response, StatusCode, header};
 use scraper::{Html, Selector};
@@ -153,7 +154,7 @@ impl AnikotoCzClient {
     ) -> Result<Vec<SearchResult>> {
         let query = query.trim();
         if query.is_empty() {
-            return Err(AniError::InputEmptyQuery);
+            return Err(AniError::EmptySearchQuery);
         }
 
         let mut request_urls = filter_search_urls_for_base(&self.inner.base, query, options.sort);
@@ -203,9 +204,7 @@ impl AnikotoCzClient {
             }
         }
 
-        Err(AniError::Provider(format!(
-            "Anikoto.cz returned no search results for {query:?}"
-        )))
+        Err(AniError::NoSearchResults)
     }
 
     pub async fn episodes(&self, show_id: &str, mode: TranslationType) -> Result<Vec<String>> {
@@ -223,7 +222,9 @@ impl AnikotoCzClient {
         sort_episodes(&mut episodes);
         if episodes.is_empty() {
             eprintln!("Anikoto.cz has no {mode} episodes for {}", id.title);
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoEpisodesAvailable {
+                anime: Some(id.title.clone()),
+            });
         }
         Ok(episodes)
     }
@@ -241,14 +242,19 @@ impl AnikotoCzClient {
             .episodes
             .iter()
             .find(|value| value.number == episode_number)
-            .ok_or(AniError::UnavailableNoEpisodes)?;
+            .ok_or_else(|| AniError::InvalidEpisodeSelection {
+                episode: episode.to_string(),
+                reason: "episode is not available for this anime".to_string(),
+            })?;
         let available = match mode {
             TranslationType::Sub => selected.sub,
             TranslationType::Dub => selected.dub,
         };
         if !available {
             eprintln!("Episode {episode} has no {mode} servers");
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoEpisodesAvailable {
+                anime: Some(id.title.clone()),
+            });
         }
 
         let episode_url = format!(
@@ -273,9 +279,7 @@ impl AnikotoCzClient {
             .await?;
         let html = provider_result(&payload, "server list")?
             .as_str()
-            .ok_or_else(|| {
-                AniError::Provider("Anikoto.cz server list contained no markup".into())
-            })?;
+            .ok_or_else(|| provider_invalid_response("server list contained no markup"))?;
         let mut servers = parse_servers(html, mode)?;
         servers.extend(self.mapper_servers(selected, mode).await);
         let mut seen = HashSet::new();
@@ -305,7 +309,11 @@ impl AnikotoCzClient {
                 failures.join("; ")
             };
             eprintln!("Anikoto.cz native source resolution failed: {detail}");
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoPlayableSources {
+                anime: Some(id.title.clone()),
+                episode: Some(episode.to_string()),
+                mode: Some(mode.to_string()),
+            });
         }
         Ok(streams)
     }
@@ -336,12 +344,10 @@ impl AnikotoCzClient {
             .await?;
         let html = provider_result(&payload, "episode list")?
             .as_str()
-            .ok_or_else(|| {
-                AniError::Provider("Anikoto.cz episode list contained no markup".into())
-            })?;
+            .ok_or_else(|| provider_invalid_response("episode list contained no markup"))?;
         let episodes = parse_episodes(html)?;
         if episodes.is_empty() {
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoEpisodesAvailable { anime: None });
         }
         let series = Series {
             canonical,
@@ -378,7 +384,7 @@ impl AnikotoCzClient {
             .get("url")
             .and_then(Value::as_str)
             .or_else(|| result.as_str())
-            .ok_or_else(|| AniError::Provider("server returned no embed URL".into()))?;
+            .ok_or_else(|| provider_invalid_response("server returned no embed URL"))?;
         validate_remote_url(raw).map(|url| url.to_string())
     }
 
@@ -403,23 +409,25 @@ impl AnikotoCzClient {
         .iter()
         .any(|domain| host_matches(host, domain))
         {
-            return Err(AniError::Provider(format!("unsupported embed host {host}")));
+            return Err(AniError::UnsupportedEmbedHost {
+                host: host.to_string(),
+            });
         }
         let origin = embed.origin().ascii_serialization();
         let html = self
             .get_text(embed.as_str(), episode_url, false, None, MAX_RESPONSE_BYTES)
             .await?;
         let data_id = parse_data_id(&html).ok_or_else(|| {
-            AniError::Provider("embed did not expose a playable source id".into())
+            provider_invalid_response("embed did not expose a playable source id")
         })?;
         let payload = self
-            .get_native_sources(&origin, embed.as_str(), &data_id, mode)
+            .get_native_sources(&origin, embed.as_str(), &data_id, mode, &html)
             .await?;
         let (sources, subtitles) = parse_sources(&payload);
         if sources.is_empty() {
-            return Err(AniError::Provider(
-                "embed returned no supported native streams".into(),
-            ));
+            return Err(AniError::NoNativeStreams {
+                provider: host.to_string(),
+            });
         }
 
         let headers = RequestHeaders {
@@ -462,6 +470,7 @@ impl AnikotoCzClient {
         embed_url: &str,
         data_id: &str,
         mode: TranslationType,
+        html: &str,
     ) -> Result<Value> {
         let mut source_url = Url::parse(&format!("{origin}/stream/getSourcesNew"))?;
         // VidTube shares episode IDs across languages and defaults to sub.
@@ -469,8 +478,90 @@ impl AnikotoCzClient {
             .query_pairs_mut()
             .append_pair("id", data_id)
             .append_pair("type", &mode.to_string());
-        self.get_json(source_url.as_str(), embed_url, true, Some(origin))
-            .await
+        let raw_text = self
+            .get_text(source_url.as_str(), embed_url, true, Some(origin), MAX_RESPONSE_BYTES)
+            .await?;
+        eprintln!("[DEBUG] getSourcesNew raw: {}", &raw_text[..raw_text.len().min(500)]);
+        let mut payload: Value = serde_json::from_str(&raw_text).map_err(|error| AniError::ProviderInvalidResponse {
+            provider: "Anikoto.cz".to_string(),
+            message: "provider returned invalid JSON".to_string(),
+            source: Some(Box::new(error)),
+        })?;
+
+        if let Some(enc) = payload.get("enc").and_then(Value::as_str) {
+            eprintln!("[DEBUG] enc field found, attempting decryption");
+            let e1_script_url = Html::parse_fragment(html)
+                .select(
+                    &Selector::parse("script[src]")
+                        .map_err(|_| provider_invalid_response("invalid selector"))?,
+                )
+                .find_map(|elem| {
+                    let src = elem.value().attr("src")?;
+                    if src.contains("e1-player") {
+                        Some(src.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| provider_invalid_response("Missing e1-player script"))?;
+
+            let e1_script_url = if e1_script_url.starts_with("//") {
+                format!("https:{}", e1_script_url)
+            } else if e1_script_url.starts_with('/') {
+                format!("{}{}", origin, e1_script_url)
+            } else {
+                e1_script_url
+            };
+
+            eprintln!("[DEBUG] fetching e1-player script: {}", e1_script_url);
+            let js = self
+                .get_text(&e1_script_url, embed_url, false, None, MAX_RESPONSE_BYTES)
+                .await?;
+            let (key, iv, secret, ttl) = player_parameters(&js)?;
+            eprintln!("[DEBUG] player params: key={:?} iv={:?} ttl={}", &key[..key.len().min(8)], &iv[..iv.len().min(8)], ttl);
+
+            let enc_owned = enc.to_owned();
+            let mut decrypted = decrypt_source(&enc_owned, &key, &iv)?;
+            eprintln!("[DEBUG] decrypted: {}", serde_json::to_string(&decrypted).unwrap_or_default().chars().take(300).collect::<String>());
+
+            fn recursively_sign(v: &mut Value, secret: &str, ttl: u64) {
+                match v {
+                    Value::String(s) => {
+                        if let Ok(signed) = signed_url(s, secret, ttl) {
+                            *s = signed;
+                        }
+                    }
+                    Value::Array(arr) => {
+                        for item in arr.iter_mut() {
+                            recursively_sign(item, secret, ttl);
+                        }
+                    }
+                    Value::Object(obj) => {
+                        for (k, val) in obj.iter_mut() {
+                            if k == "file" || k == "url" || k == "src" {
+                                if let Value::String(s) = val {
+                                    if let Ok(signed) = signed_url(s, secret, ttl) {
+                                        *s = signed;
+                                    }
+                                }
+                            } else {
+                                recursively_sign(val, secret, ttl);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            recursively_sign(&mut decrypted, &secret, ttl);
+            eprintln!("[DEBUG] signed decrypted: {}", serde_json::to_string(&decrypted).unwrap_or_default().chars().take(300).collect::<String>());
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert("sources".to_string(), decrypted);
+        } else {
+            eprintln!("[DEBUG] no enc field found in payload, keys: {:?}", payload.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+        }
+        Ok(payload)
     }
 
     async fn expand_hls(
@@ -486,9 +577,11 @@ impl AnikotoCzClient {
         }
         let bytes = response.bytes().await?;
         if bytes.len() > MAX_PLAYLIST_BYTES {
-            return Err(AniError::Provider(
-                "provider playlist exceeds the 4 MiB limit".into(),
-            ));
+            return Err(AniError::ProviderResponseSizeExceeded {
+                provider: "Anikoto.cz".to_string(),
+                size: bytes.len(),
+                limit: MAX_PLAYLIST_BYTES,
+            });
         }
         let text = String::from_utf8_lossy(&bytes);
         if !text.contains("#EXTM3U") || !text.contains("#EXT-X-STREAM-INF") {
@@ -531,8 +624,11 @@ impl AnikotoCzClient {
         let text = self
             .get_text(url, referer, ajax, origin, MAX_RESPONSE_BYTES)
             .await?;
-        serde_json::from_str(&text)
-            .map_err(|_| AniError::Provider("provider returned invalid JSON".into()))
+        serde_json::from_str(&text).map_err(|error| AniError::ProviderInvalidResponse {
+            provider: "Anikoto.cz".to_string(),
+            message: "provider returned invalid JSON".to_string(),
+            source: Some(Box::new(error)),
+        })
     }
 
     async fn get_text(
@@ -581,12 +677,21 @@ fn decode_id(value: &str) -> Result<AnikotoCzId> {
     }
     let payload = value
         .strip_prefix("anikoto2:")
-        .ok_or_else(|| AniError::Input("invalid Anikoto.cz show ID".into()))?;
+        .ok_or_else(|| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto.cz show ID".to_string(),
+        })?;
     let bytes = URL_SAFE_NO_PAD
         .decode(payload)
-        .map_err(|_| AniError::Input("invalid Anikoto.cz show ID encoding".into()))?;
-    let decoded: AnikotoCzId = serde_json::from_slice(&bytes)
-        .map_err(|_| AniError::Input("invalid Anikoto.cz show metadata".into()))?;
+        .map_err(|_| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto.cz show ID encoding".to_string(),
+        })?;
+    let decoded: AnikotoCzId =
+        serde_json::from_slice(&bytes).map_err(|_| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto.cz show metadata".to_string(),
+        })?;
     validate_slug(&decoded.slug)?;
     Ok(decoded)
 }
@@ -644,15 +749,15 @@ fn filter_search_urls(query: &str) -> Vec<String> {
 fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
     let document = Html::parse_fragment(html);
     let list = Selector::parse("#list-items .item")
-        .map_err(|_| AniError::Provider("invalid result list selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid result list selector"))?;
     let title_selector = Selector::parse(".name, .d-title")
-        .map_err(|_| AniError::Provider("invalid title selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid title selector"))?;
     let base = Url::parse(base)?;
     let expected_host = base.host_str().unwrap_or_default();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
     let anchor = Selector::parse("a[href]")
-        .map_err(|_| AniError::Provider("invalid anchor selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid anchor selector"))?;
     for element in document.select(&list) {
         let Some(href) = element
             .select(&anchor)
@@ -702,24 +807,28 @@ fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
 fn parse_show(base: &str, html: &str) -> Result<(String, String)> {
     let document = Html::parse_document(html);
     let selector = Selector::parse("#watch-main")
-        .map_err(|_| AniError::Provider("invalid show selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid show selector"))?;
     let element = document
         .select(&selector)
         .next()
-        .ok_or_else(|| AniError::Provider("show page did not expose #watch-main".into()))?;
+        .ok_or_else(|| provider_invalid_response("show page did not expose #watch-main"))?;
     let show_id = element.value().attr("data-id").unwrap_or_default();
     let canonical = element.value().attr("data-url").unwrap_or_default();
     if !show_id.bytes().all(|byte| byte.is_ascii_digit()) || show_id.is_empty() {
-        return Err(AniError::Provider(
-            "show page exposed an invalid catalog ID".into(),
-        ));
+        return Err(AniError::ProviderInvalidResponse {
+            provider: "Anikoto.cz".to_string(),
+            message: "show page exposed an invalid catalog ID".to_string(),
+            source: None,
+        });
     }
     let base = Url::parse(base)?;
     let canonical = base.join(canonical)?;
     if canonical.scheme() != "https" || canonical.host_str() != base.host_str() {
-        return Err(AniError::Provider(
-            "show page exposed an invalid canonical URL".into(),
-        ));
+        return Err(AniError::ProviderInvalidResponse {
+            provider: "Anikoto.cz".to_string(),
+            message: "show page exposed an invalid canonical URL".to_string(),
+            source: None,
+        });
     }
     Ok((
         show_id.into(),
@@ -730,7 +839,7 @@ fn parse_show(base: &str, html: &str) -> Result<(String, String)> {
 fn parse_episodes(html: &str) -> Result<Vec<Episode>> {
     let document = Html::parse_fragment(html);
     let selector = Selector::parse("a[data-num][data-ids]")
-        .map_err(|_| AniError::Provider("invalid episode selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid episode selector"))?;
     let mut seen = HashSet::new();
     let mut episodes = Vec::new();
     for element in document.select(&selector) {
@@ -767,11 +876,11 @@ fn parse_episodes(html: &str) -> Result<Vec<Episode>> {
 fn parse_servers(html: &str, mode: TranslationType) -> Result<Vec<Server>> {
     let document = Html::parse_fragment(html);
     let groups = Selector::parse("div.type")
-        .map_err(|_| AniError::Provider("invalid server selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid server selector"))?;
     let labels = Selector::parse("label")
-        .map_err(|_| AniError::Provider("invalid server label selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid server label selector"))?;
     let items = Selector::parse("li[data-link-id]")
-        .map_err(|_| AniError::Provider("invalid server item selector".into()))?;
+        .map_err(|_| provider_invalid_response("invalid server item selector"))?;
     let mut servers = Vec::new();
     let mut seen = HashSet::new();
     for group in document.select(&groups) {
@@ -949,19 +1058,29 @@ fn parse_data_id(html: &str) -> Option<String> {
         .map(|captures| captures[1].into())
 }
 
+fn provider_invalid_response(message: impl Into<String>) -> AniError {
+    AniError::ProviderInvalidResponse {
+        provider: "Anikoto.cz".to_string(),
+        message: message.into(),
+        source: None,
+    }
+}
+
 fn provider_result<'a>(value: &'a Value, context: &str) -> Result<&'a Value> {
     if value.get("status").and_then(Value::as_u64) != Some(200) {
         let message = value
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or(context);
-        return Err(AniError::Provider(format!(
-            "invalid Anikoto.cz {context} response: {message}"
-        )));
+        return Err(AniError::ProviderInvalidResponse {
+            provider: "Anikoto.cz".to_string(),
+            message: format!("invalid Anikoto.cz {context} response: {message}"),
+            source: None,
+        });
     }
     value
         .get("result")
-        .ok_or_else(|| AniError::Provider(format!("Anikoto.cz {context} response has no result")))
+        .ok_or_else(|| provider_invalid_response(format!("{context} response has no result")))
 }
 
 async fn checked_text(response: Response, max_bytes: usize) -> Result<String> {
@@ -979,24 +1098,29 @@ async fn checked_text(response: Response, max_bytes: usize) -> Result<String> {
         });
     }
     if !status.is_success() {
-        return Err(AniError::Catalog {
+        return Err(AniError::ProviderCatalogError {
             provider: "Anikoto.cz".into(),
-            message: format!("HTTP {status}"),
+            message: format!("HTTP {}", status),
+            source: None,
         });
     }
-    if response
+    if let Some(length) = response
         .content_length()
-        .is_some_and(|length| length > max_bytes as u64)
+        .filter(|&length| length > max_bytes as u64)
     {
-        return Err(AniError::Provider(
-            "provider response exceeded the safety limit".into(),
-        ));
+        return Err(AniError::ProviderResponseSizeExceeded {
+            provider: "Anikoto.cz".to_string(),
+            size: length as usize,
+            limit: max_bytes,
+        });
     }
     let bytes = response.bytes().await?;
     if bytes.len() > max_bytes {
-        return Err(AniError::Provider(
-            "provider response exceeded the safety limit".into(),
-        ));
+        return Err(AniError::ProviderResponseSizeExceeded {
+            provider: "Anikoto.cz".to_string(),
+            size: bytes.len(),
+            limit: max_bytes,
+        });
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
@@ -1023,7 +1147,10 @@ fn normalize_episode(value: &str) -> Result<String> {
         .parse::<f64>()
         .ok()
         .filter(|number| number.is_finite() && *number >= 0.0)
-        .ok_or_else(|| AniError::Input(format!("invalid episode number: {value}")))?;
+        .ok_or_else(|| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid episode number".to_string(),
+        })?;
     if number.fract() == 0.0 {
         Ok(format!("{number:.0}"))
     } else {
@@ -1038,7 +1165,10 @@ fn validate_slug(value: &str) -> Result<()> {
     {
         Ok(())
     } else {
-        Err(AniError::Input("invalid Anikoto.cz show slug".into()))
+        Err(AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto.cz show slug".to_string(),
+        })
     }
 }
 
@@ -1049,15 +1179,17 @@ fn validate_remote_url(value: &str) -> Result<Url> {
         || !url.username().is_empty()
         || url.password().is_some()
     {
-        return Err(AniError::Provider("unsafe provider URL".into()));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "unsafe provider URL".to_string(),
+        });
     }
     if url
         .host_str()
         .is_some_and(|host| host.parse::<std::net::IpAddr>().is_ok())
     {
-        return Err(AniError::Provider(
-            "literal-IP provider URLs are not allowed".into(),
-        ));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "literal-IP provider URLs are not allowed".to_string(),
+        });
     }
     Ok(url)
 }
@@ -1127,6 +1259,99 @@ pub fn requires_hls_relay(stream: &StreamLink) -> bool {
             })
 }
 
+fn player_parameters(script: &str) -> Result<(String, String, String, u64)> {
+    let re = Regex::new(r#"\bconst\s+[\w$]+="((?:\\.|[^"\\])*)",[\w$]+="((?:\\.|[^"\\])*)",[\w$]+="((?:\\.|[^"\\])*)",[\w$]+=(\d+);function\s+[\w$]+\("#).unwrap();
+    for captures in re.captures_iter(script) {
+        let m = captures.get(0).unwrap();
+        let end = m.end();
+        let limit = (end + 2500).min(script.len());
+        if script[end..limit].contains("AES-CBC") {
+            let parse = |s: &str| -> String {
+                serde_json::from_str(&format!("\"{}\"", s)).unwrap_or_else(|_| s.to_string())
+            };
+            let key = parse(&captures[1]);
+            let iv = parse(&captures[2]);
+            let secret = parse(&captures[3]);
+            let ttl = captures[4].parse::<u64>().unwrap_or(0);
+            return Ok((key, iv, secret, ttl));
+        }
+    }
+    Err(provider_invalid_response(
+        "Player crypto parameters changed; update player_parameters().",
+    ))
+}
+
+fn decrypt_source(encoded: &str, key: &str, iv: &str) -> Result<Value> {
+    let mut key_bytes = [0u8; 32];
+    let key_src = key.as_bytes();
+    let key_len = key_src.len().min(32);
+    key_bytes[..key_len].copy_from_slice(&key_src[..key_len]);
+
+    let mut iv_bytes = [0u8; 16];
+    let iv_src = iv.as_bytes();
+    let iv_len = iv_src.len().min(16);
+    iv_bytes[..iv_len].copy_from_slice(&iv_src[..iv_len]);
+
+    let mut enc = encoded.to_string();
+    if !enc.len().is_multiple_of(4) {
+        enc.push_str(&"=".repeat(4 - (enc.len() % 4)));
+    }
+    let mut encrypted = base64::engine::general_purpose::URL_SAFE
+        .decode(enc)
+        .map_err(|_| provider_invalid_response("Invalid base64 in enc"))?;
+
+    let pt = cbc::Decryptor::<aes::Aes256>::new(&key_bytes.into(), &iv_bytes.into())
+        .decrypt_padded::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
+        .map_err(|_| provider_invalid_response("Decryption failed"))?;
+
+    let json_str = std::str::from_utf8(pt)
+        .map_err(|_| provider_invalid_response("Invalid UTF-8 in decrypted data"))?;
+    serde_json::from_str(json_str)
+        .map_err(|_| provider_invalid_response("Invalid JSON in decrypted data"))
+}
+
+fn signed_url(url: &str, secret: &str, ttl: u64) -> Result<String> {
+    let mut parsed =
+        Url::parse(url).map_err(|_| provider_invalid_response("Invalid url for signing"))?;
+    if parsed.query_pairs().any(|(k, _)| k == "token") {
+        return Ok(url.to_string());
+    }
+
+    let path = parsed.path();
+    let re = Regex::new(r"(?i)/([a-f0-9]{32})/([a-f0-9]{32})/").unwrap();
+    let captures = re.captures(path).ok_or_else(|| {
+        provider_invalid_response("Unexpected CDN path; cannot reproduce the player's token.")
+    })?;
+
+    let expires = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + ttl;
+    let message = format!(
+        "{}|{}/{}",
+        expires,
+        captures[1].to_ascii_lowercase(),
+        captures[2].to_ascii_lowercase()
+    );
+
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .map_err(|_| provider_invalid_response("Invalid secret size for HMAC"))?;
+    mac.update(message.as_bytes());
+    let signature = mac.finalize().into_bytes();
+
+    let encode =
+        |value: &[u8]| -> String { base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value) };
+    let token = format!("{}.{}", encode(message.as_bytes()), encode(&signature));
+
+    parsed.query_pairs_mut().append_pair("token", &token);
+    Ok(parsed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1158,7 +1383,7 @@ mod tests {
                 .await;
 
             let payload = client
-                .get_native_sources(&server.uri(), &embed_url, "42", mode)
+                .get_native_sources(&server.uri(), &embed_url, "42", mode, "<html></html>")
                 .await
                 .unwrap();
             let (sources, _) = parse_sources(&payload);

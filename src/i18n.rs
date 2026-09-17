@@ -30,6 +30,54 @@ impl I18n {
         const DOCS_TROUBLESHOOTING: &str =
             "https://vorlie.github.io/ani-cli-rs/support/troubleshooting/";
         match error {
+            // New structured errors - use default display for now
+            AniError::ProviderUnavailable { .. } => error.to_string(),
+            AniError::ProviderRequestFailed { .. } => error.to_string(),
+            AniError::ProviderInvalidResponse { .. } => error.to_string(),
+            AniError::ProviderCatalogError { .. } => error.to_string(),
+            AniError::ProviderUrlValidationFailed { .. } => error.to_string(),
+            AniError::ProviderResponseSizeExceeded { .. } => error.to_string(),
+            AniError::NoSearchResults => error.to_string(),
+            AniError::EmptySearchQuery => error.to_string(),
+            AniError::NoEpisodesAvailable { .. } => error.to_string(),
+            AniError::InvalidEpisodeSelection { .. } => error.to_string(),
+            AniError::SelectionOutOfRange { .. } => error.to_string(),
+            AniError::CommandRequiresQuery => error.to_string(),
+            AniError::NoPlayableSources { .. } => error.to_string(),
+            AniError::SourceResolutionFailed { .. } => error.to_string(),
+            AniError::NoDownloadTool => {
+                format!(
+                    "HLS downloads require yt-dlp or FFmpeg to be installed and available in PATH.\n\
+                    Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
+                )
+            }
+            AniError::StreamUnavailable { .. } => error.to_string(),
+            AniError::UnsupportedEmbedHost { .. } => error.to_string(),
+            AniError::NoNativeStreams { .. } => error.to_string(),
+            AniError::DownloadFailed { .. } => error.to_string(),
+            AniError::HlsDownloadFailed { .. } => error.to_string(),
+            AniError::SubtitleDownloadFailed { .. } => error.to_string(),
+            AniError::SubtitleSizeExceeded { .. } => error.to_string(),
+            AniError::DownloadOutputError { .. } => error.to_string(),
+            AniError::PlayerNotFound { .. } => error.to_string(),
+            AniError::PlayerLaunchFailed { .. } => error.to_string(),
+            AniError::PlayerExitedWithError { .. } => error.to_string(),
+            AniError::AndroidTerminalRequired => error.to_string(),
+            AniError::GeneralPlayerError { .. } => error.to_string(),
+            AniError::IoError { .. } => error.to_string(),
+            AniError::HistoryStateDirectoryError => error.to_string(),
+            AniError::HistoryOperationFailed { .. } => error.to_string(),
+            AniError::InvalidHistoryEntry { .. } => error.to_string(),
+            AniError::UpdateCheckFailed { .. } => error.to_string(),
+            AniError::InvalidReleaseTag { .. } => error.to_string(),
+            AniError::InstallerExecutionFailed { .. } => error.to_string(),
+            AniError::PlatformNotSupported { .. } => error.to_string(),
+            AniError::InternalError { .. } => error.to_string(),
+            AniError::JsonParsingError { .. } => error.to_string(),
+            AniError::UrlParsingError { .. } => error.to_string(),
+            AniError::InvalidInput { .. } => error.to_string(),
+
+            // Legacy error handling
             AniError::Network(msg) => format!("Network request failed: {msg}"),
             AniError::Provider(msg) => format!(
                 "Provider returned invalid data: {msg}\n\
@@ -66,7 +114,7 @@ impl I18n {
                 "HLS downloads require yt-dlp or FFmpeg to be installed and available in PATH.\n\
                 Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
             ),
-            AniError::DownloadFailed => format!(
+            AniError::HlsDownloadFailedLegacy => format!(
                 "HLS download failed.\n\
                 Help: {DOCS_TROUBLESHOOTING}#part-remains-after-a-download"
             ),
@@ -75,12 +123,12 @@ impl I18n {
                 "Could not determine where to store history data.".to_string()
             }
 
-            AniError::PlayerNotFound => format!(
+            AniError::PlayerNotFoundLegacy => format!(
                 "Player executable not found. Make sure your configured player is installed.\n\
                 Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
             ),
 
-            AniError::PlayerLaunchFailed => format!(
+            AniError::PlayerLaunchFailedLegacy => format!(
                 "Could not launch the player.\n\
                 Help: {DOCS_TROUBLESHOOTING}#mpv-vlc-syncplay-aria2c-yt-dlp-or-ffmpeg-not-found"
             ),

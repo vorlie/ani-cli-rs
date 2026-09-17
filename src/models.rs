@@ -28,9 +28,10 @@ impl FromStr for CatalogProvider {
         match value.to_ascii_lowercase().as_str() {
             "anikoto" | "anikoto1" | "anikoto-api" => Ok(Self::Anikoto),
             "anikoto2" | "anikoto-cz" | "anikoto.cz" => Ok(Self::Anikoto2),
-            _ => Err(AniError::Input(format!(
-                "provider must be anikoto or anikoto2, got {value}"
-            ))),
+            _ => Err(AniError::InvalidInput {
+                input: value.to_string(),
+                reason: "provider must be anikoto or anikoto2".to_string(),
+            }),
         }
     }
 }
@@ -58,9 +59,10 @@ impl FromStr for TranslationType {
         match value.to_ascii_lowercase().as_str() {
             "sub" => Ok(Self::Sub),
             "dub" => Ok(Self::Dub),
-            _ => Err(AniError::Input(format!(
-                "translation type must be sub or dub, got {value}"
-            ))),
+            _ => Err(AniError::InvalidInput {
+                input: value.to_string(),
+                reason: "translation type must be sub or dub".to_string(),
+            }),
         }
     }
 }
@@ -109,9 +111,10 @@ impl FromStr for SearchSort {
             "release-date" | "releasedate" => Ok(Self::ReleaseDate),
             "most-viewed" | "mostviewed" => Ok(Self::MostViewed),
             "number-of-episodes" | "numberofepisodes" => Ok(Self::NumberOfEpisodes),
-            _ => Err(AniError::Input(format!(
-                "search sort must be one of: latest-updated, latest-added, score, name-az, release-date, most-viewed, number_of_episodes; got {value}"
-            ))),
+            _ => Err(AniError::InvalidInput {
+                input: value.to_string(),
+                reason: "search sort must be one of: latest-updated, latest-added, score, name-az, release-date, most-viewed, number_of_episodes".to_string(),
+            }),
         }
     }
 }
@@ -233,7 +236,7 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
             .last()
             .cloned()
             .map(|v| vec![v])
-            .ok_or(AniError::UnavailableNoEpisodes);
+            .ok_or(AniError::NoEpisodesAvailable { anime: None });
     }
     if trimmed.contains(char::is_whitespace) {
         let requested: Vec<_> = trimmed.split_whitespace().map(str::to_owned).collect();
@@ -241,7 +244,10 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
             return Ok(requested);
         }
         eprintln!("One or more selected episodes do not exist");
-        return Err(AniError::InputInvalidEpisode);
+        return Err(AniError::InvalidEpisodeSelection {
+            episode: trimmed.to_string(),
+            reason: "one or more selected episodes do not exist".to_string(),
+        });
     }
     if let Some((start, end)) = trimmed.split_once('-') {
         let end = if end == "-1" || end.is_empty() {
@@ -249,24 +255,34 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
         } else {
             end
         };
-        let start_index = available
-            .iter()
-            .position(|v| v == start)
-            .ok_or(AniError::InputInvalidEpisode)?;
-        let end_index = available
-            .iter()
-            .position(|v| v == end)
-            .ok_or(AniError::InputInvalidEpisode)?;
+        let start_index = available.iter().position(|v| v == start).ok_or_else(|| {
+            AniError::InvalidEpisodeSelection {
+                episode: start.to_string(),
+                reason: "range start does not exist".to_string(),
+            }
+        })?;
+        let end_index = available.iter().position(|v| v == end).ok_or_else(|| {
+            AniError::InvalidEpisodeSelection {
+                episode: end.to_string(),
+                reason: "range end does not exist".to_string(),
+            }
+        })?;
         if start_index > end_index {
             eprintln!("Episode range is reversed");
-            return Err(AniError::InputInvalidEpisode);
+            return Err(AniError::InvalidEpisodeSelection {
+                episode: trimmed.to_string(),
+                reason: "episode range is reversed".to_string(),
+            });
         }
         return Ok(available[start_index..=end_index].to_vec());
     }
     if available.iter().any(|v| v == trimmed) {
         Ok(vec![trimmed.to_owned()])
     } else {
-        Err(AniError::InputInvalidEpisode)
+        Err(AniError::InvalidEpisodeSelection {
+            episode: trimmed.to_string(),
+            reason: "episode does not exist".to_string(),
+        })
     }
 }
 

@@ -17,6 +17,8 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+If this change involves error handling or user-facing errors, include the error code (e.g., `ACL-3001`) in the issue description.
+
 ## Checklist
 
 - [ ] The change is focused and its commit history is understandable.

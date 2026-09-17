@@ -244,7 +244,9 @@ impl Player {
                     "Player executable not found: {}. Please install the player or set ANI_CLI_PLAYER environment variable.",
                     self.options.executable.display()
                 );
-                return Err(AniError::PlayerNotFound);
+                return Err(AniError::PlayerNotFound {
+                    executable: self.options.executable.display().to_string(),
+                });
             }
         } else {
             // For simple names, check if they can be found in PATH
@@ -254,7 +256,9 @@ impl Player {
                     "Player executable '{}' not found in PATH. Please install the player or set ANI_CLI_PLAYER environment variable.",
                     self.options.executable.display()
                 );
-                return Err(AniError::PlayerNotFound);
+                return Err(AniError::PlayerNotFound {
+                    executable: self.options.executable.display().to_string(),
+                });
             }
         }
 
@@ -307,7 +311,10 @@ impl Player {
                         "Could not launch {}: {error}",
                         self.options.executable.display()
                     );
-                    Err(AniError::PlayerLaunchFailed)
+                    Err(AniError::PlayerLaunchFailed {
+                        executable: self.options.executable.display().to_string(),
+                        reason: format!("attached mode launch failed: {}", error),
+                    })
                 }
             }
         } else {
@@ -339,7 +346,10 @@ impl Player {
                         "Could not launch {}: {error}",
                         self.options.executable.display()
                     );
-                    Err(AniError::PlayerLaunchFailed)
+                    Err(AniError::PlayerLaunchFailed {
+                        executable: self.options.executable.display().to_string(),
+                        reason: format!("detached mode launch failed: {}", error),
+                    })
                 }
             }
         }
@@ -427,7 +437,10 @@ impl Player {
                             "termux-open fallback also failed",
                         );
                         eprintln!("{primary_error}; {fallback_error}");
-                        return Err(AniError::PlayerLaunchFailed);
+                        return Err(AniError::PlayerLaunchFailed {
+                            executable: self.options.executable.display().to_string(),
+                            reason: format!("Android launch failed: {}", fallback_error),
+                        });
                     }
                 }
             }
@@ -562,7 +575,10 @@ async fn wait_for_android_player() -> Result<()> {
     .await
     .map_err(|error| {
         eprintln!("Android playback prompt failed: {error}");
-        AniError::PlayerLaunchFailed
+        AniError::PlayerLaunchFailed {
+            executable: "android".to_string(),
+            reason: format!("playback prompt failed: {}", error),
+        }
     })??;
     Ok(())
 }

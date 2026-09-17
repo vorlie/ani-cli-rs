@@ -153,7 +153,7 @@ impl AnikotoClient {
     ) -> Result<Vec<SearchResult>> {
         let query = query.trim();
         if query.is_empty() {
-            return Err(AniError::InputEmptyQuery);
+            return Err(AniError::EmptySearchQuery);
         }
         let cache_key = format!("{}:{}", options.allow_adult, query.to_ascii_lowercase());
         if let Some(value) = cache_get(&self.inner.searches, &cache_key) {
@@ -176,11 +176,12 @@ impl AnikotoClient {
             (Err(error @ AniError::ProviderRateLimited { .. }), Err(_))
             | (Err(_), Err(error @ AniError::ProviderRateLimited { .. })) => return Err(error),
             (Err(first), Err(second)) => {
-                return Err(AniError::Catalog {
+                return Err(AniError::ProviderCatalogError {
                     provider: "Anikoto".into(),
                     message: format!(
                         "recent catalog failed ({first}); AniList search failed ({second})"
                     ),
+                    source: None,
                 });
             }
         };
@@ -200,7 +201,9 @@ impl AnikotoClient {
         }
         let count = id.episodes.unwrap_or(0);
         if count == 0 {
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoEpisodesAvailable {
+                anime: id.title.clone(),
+            });
         }
         Ok((1..=count).map(|episode| episode.to_string()).collect())
     }
@@ -222,7 +225,9 @@ impl AnikotoClient {
         let selected = series.iter().find(|value| value.number == episode);
         let candidates = embed_candidates(&self.inner.megaplay_base, &id, episode, mode, selected);
         if candidates.is_empty() {
-            return Err(AniError::UnavailableNoEpisodes);
+            return Err(AniError::NoEpisodesAvailable {
+                anime: id.title.clone(),
+            });
         }
 
         let mut failures = Vec::new();
@@ -241,7 +246,11 @@ impl AnikotoClient {
             "Anikoto native source resolution failures: {}",
             failures.join("; ")
         );
-        Err(AniError::UnavailableNoEpisodes)
+        Err(AniError::NoPlayableSources {
+            anime: id.title.clone(),
+            episode: Some(episode.to_string()),
+            mode: Some(mode.to_string()),
+        })
     }
 
     async fn search_recent(&self, query: &str, allow_adult: bool) -> Result<Vec<SearchResult>> {
@@ -292,8 +301,10 @@ impl AnikotoClient {
             .send()
             .await?;
         let html = checked_text(html, "MegaPlay").await?;
-        let data_id = parse_data_id(&html).ok_or_else(|| {
-            AniError::Provider("MegaPlay did not expose a playable source id".into())
+        let data_id = parse_data_id(&html).ok_or_else(|| AniError::ProviderInvalidResponse {
+            provider: "MegaPlay".to_string(),
+            message: "embed did not expose a playable source id".to_string(),
+            source: None,
         })?;
         let source_url = format!(
             "{}/stream/getSources?id={data_id}",
@@ -308,9 +319,9 @@ impl AnikotoClient {
             .await?;
         let (sources, subtitles) = parse_megaplay_sources(&payload);
         if sources.is_empty() {
-            return Err(AniError::Provider(
-                "MegaPlay did not return any supported native streams".into(),
-            ));
+            return Err(AniError::NoNativeStreams {
+                provider: "MegaPlay".to_string(),
+            });
         }
 
         let mut streams = Vec::new();
@@ -448,12 +459,20 @@ fn decode_id(value: &str) -> Result<AnikotoId> {
     }
     let payload = value
         .strip_prefix("anikoto:")
-        .ok_or_else(|| AniError::Input("invalid Anikoto show ID".into()))?;
+        .ok_or_else(|| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto show ID".to_string(),
+        })?;
     let bytes = URL_SAFE_NO_PAD
         .decode(payload)
-        .map_err(|_| AniError::Input("invalid Anikoto show ID encoding".into()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|_| AniError::Input("invalid Anikoto show metadata".into()))
+        .map_err(|_| AniError::InvalidInput {
+            input: value.to_string(),
+            reason: "invalid Anikoto show ID encoding".to_string(),
+        })?;
+    serde_json::from_slice(&bytes).map_err(|_| AniError::InvalidInput {
+        input: value.to_string(),
+        reason: "invalid Anikoto show metadata".to_string(),
+    })
 }
 
 fn parse_search_payload(value: &Value, allow_adult: bool) -> Vec<SearchResult> {
@@ -785,9 +804,10 @@ async fn checked_json(response: Response, provider: &str) -> Result<Value> {
         });
     }
     if !status.is_success() {
-        return Err(AniError::Catalog {
+        return Err(AniError::ProviderCatalogError {
             provider: provider.into(),
-            message: format!("HTTP {status}"),
+            message: format!("HTTP {}", status),
+            source: None,
         });
     }
     response.json().await.map_err(Into::into)
@@ -808,9 +828,10 @@ async fn checked_text(response: Response, provider: &str) -> Result<String> {
         });
     }
     if !status.is_success() {
-        return Err(AniError::Catalog {
+        return Err(AniError::ProviderCatalogError {
             provider: provider.into(),
-            message: format!("HTTP {status}"),
+            message: format!("HTTP {}", status),
+            source: None,
         });
     }
     response.text().await.map_err(Into::into)
@@ -819,7 +840,9 @@ async fn checked_text(response: Response, provider: &str) -> Result<String> {
 fn validate_remote_url(value: &str) -> Result<Url> {
     let url = Url::parse(value)?;
     if !url.username().is_empty() || url.password().is_some() {
-        return Err(AniError::Provider("media URL contains credentials".into()));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "media URL contains credentials".to_string(),
+        });
     }
     let loopback = url.host_str().is_some_and(|host| {
         host == "localhost"
@@ -828,7 +851,9 @@ fn validate_remote_url(value: &str) -> Result<Url> {
                 .is_ok_and(|ip| ip.is_loopback())
     });
     if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err(AniError::Provider("media URL must use HTTPS".into()));
+        return Err(AniError::ProviderUrlValidationFailed {
+            reason: "media URL must use HTTPS".to_string(),
+        });
     }
     Ok(url)
 }

@@ -33,7 +33,7 @@ pub fn force_hls_relay(stream: &StreamLink) -> bool {
     stream.hls
 }
 pub use download::{DownloadOptions, download_stream};
-pub use error::{AniError, Result};
+pub use error::{AniError, ErrorCode, ErrorReport, ErrorVerbosity, Result};
 pub use history::{HistoryEntry, HistoryStore};
 pub use hls_relay::{HlsRelay, relay_stream, relay_stream_without_hls_subtitles};
 pub use i18n::{I18n, Locale};

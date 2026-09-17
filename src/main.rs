@@ -1,10 +1,10 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
 use ani_lib::{
-    AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, HistoryEntry,
-    HistoryStore, I18n, Player, PlayerKind, PlayerOptions, Result, SearchOptions, SearchResult,
-    SearchSort, StreamLink, TranslationType, choose_quality, download_stream,
-    expand_episode_selection, provider_from_show_id,
+    AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, ErrorReport,
+    ErrorVerbosity, HistoryEntry, HistoryStore, Player, PlayerKind, PlayerOptions, Result,
+    SearchOptions, SearchResult, SearchSort, StreamLink, TranslationType, choose_quality,
+    download_stream, expand_episode_selection, provider_from_show_id,
 };
 #[cfg(debug_assertions)]
 use ani_lib::{RequestHeaders, SubtitleTrack};
@@ -147,6 +147,12 @@ struct Cli {
     /// Return the attached player's exit status after playback.
     #[arg(long, env = "ANI_CLI_EXIT_AFTER_PLAY")]
     exit_after_play: bool,
+    /// Enable verbose error output with full error chains.
+    #[arg(long, env = "ANI_CLI_VERBOSE")]
+    verbose: bool,
+    /// Enable debug error output with detailed diagnostics.
+    #[arg(long, env = "ANI_CLI_DEBUG")]
+    debug: bool,
     /// Force all streams through HLS relay regardless of host allowlist.
     #[arg(short = 'I', long, env = "ANI_CLI_IGNORE_HOST_LISTS")]
     ignore_host_lists: bool,
@@ -277,9 +283,18 @@ struct ActionArgs {
 #[tokio::main]
 async fn main() {
     log::init();
-    if let Err(error) = run(Cli::parse()).await {
-        let i18n = I18n::default();
-        eprintln!("\x1b[31merror:\x1b[0m {}", i18n.error(&error));
+    let cli = Cli::parse();
+    let verbosity = if cli.debug {
+        ErrorVerbosity::Debug
+    } else if cli.verbose {
+        ErrorVerbosity::Verbose
+    } else {
+        ErrorVerbosity::Normal
+    };
+
+    if let Err(error) = run(cli).await {
+        let report = ErrorReport::from_error(&error);
+        eprintln!("{}", report.render(verbosity));
         std::process::exit(1);
     }
 }
@@ -306,7 +321,7 @@ async fn run(cli: Cli) -> Result<()> {
     if cli.next_episode_countdown {
         let query = if cli.query.is_empty() {
             if !std::io::stdin().is_terminal() {
-                return Err(AniError::InputRequiresQuery);
+                return Err(AniError::CommandRequiresQuery);
             }
             Input::with_theme(&ColorfulTheme::default())
                 .with_prompt("Search anime release schedule")
@@ -353,10 +368,11 @@ async fn run(cli: Cli) -> Result<()> {
             else {
                 return Ok(());
             };
-            let selection =
-                cli.episode.clone().or(initial_episode).ok_or_else(|| {
-                    AniError::Unavailable("history entry has no next episode".into())
-                })?;
+            let selection = cli.episode.clone().or(initial_episode).ok_or_else(|| {
+                AniError::StreamUnavailable {
+                    reason: "history entry has no next episode".to_string(),
+                }
+            })?;
             let selected = expand_episode_selection(&selection, &episodes)?;
             let prepared = if cli.download {
                 Some(require_download_preflight(
@@ -520,7 +536,7 @@ async fn display_next_episode_schedule(query: &str) -> Result<()> {
         .json::<ScheduleSearchResponse>()
         .await?;
     if response.anime.is_empty() {
-        return Err(AniError::UnavailableNoResults);
+        return Err(AniError::NoSearchResults);
     }
     for anime in &response.anime {
         for line in schedule_lines(anime) {
@@ -545,11 +561,12 @@ async fn check_and_notify_new_version(current_version: &str) -> Result<()> {
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|_| AniError::Unavailable("failed to fetch release info".into()))?;
-    let release: GithubRelease = resp
-        .json()
-        .await
-        .map_err(|_| AniError::Unavailable("invalid release info".into()))?;
+        .map_err(|_| AniError::UpdateCheckFailed {
+            reason: "failed to fetch release info".to_string(),
+        })?;
+    let release: GithubRelease = resp.json().await.map_err(|_| AniError::UpdateCheckFailed {
+        reason: "invalid release info".to_string(),
+    })?;
     let latest = release.tag_name.trim_start_matches('v');
     let latest_ver = match Version::parse(latest) {
         Ok(v) => v,
@@ -790,8 +807,13 @@ async fn run_command(
                 )
                 .await?;
             if let Some(quality) = args.quality {
-                let value = choose_quality(&values, &quality)
-                    .ok_or(AniError::UnavailableNoStreams)?;
+                let value = choose_quality(&values, &quality).ok_or_else(|| {
+                    AniError::NoPlayableSources {
+                        anime: None,
+                        episode: Some(args.episode.clone()),
+                        mode: None,
+                    }
+                })?;
                 output(std::slice::from_ref(value), args.json, |value| {
                     format!("{}\t{}\t{}", value.resolution, value.provider, value.url)
                 })?;
@@ -806,8 +828,13 @@ async fn run_command(
             let streams = clients
                 .streams(&args.show_id, provider, &args.episode, mode)
                 .await?;
-            let stream = choose_quality(&streams, &args.quality)
-                .ok_or(AniError::UnavailableNoStreams)?;
+            let stream = choose_quality(&streams, &args.quality).ok_or_else(|| {
+                AniError::NoPlayableSources {
+                    anime: Some(args.title.clone()),
+                    episode: Some(args.episode.clone()),
+                    mode: Some(mode.to_string()),
+                }
+            })?;
             let mut options = PlayerOptions::default_player();
             if let Some(executable) = args.player {
                 options.executable = executable;
@@ -828,8 +855,13 @@ async fn run_command(
                     TranslationType::from_str(&args.mode)?,
                 )
                 .await?;
-            let stream = choose_quality(&streams, &args.quality)
-                .ok_or(AniError::UnavailableNoStreams)?;
+            let stream = choose_quality(&streams, &args.quality).ok_or_else(|| {
+                AniError::NoPlayableSources {
+                    anime: Some(args.title.clone()),
+                    episode: Some(args.episode.clone()),
+                    mode: Some(args.mode.clone()),
+                }
+            })?;
             let options = DownloadOptions {
                 directory: args.output.unwrap_or_else(|| PathBuf::from(".")),
                 filename: format!("{} Episode {}", args.title, args.episode),
@@ -861,13 +893,16 @@ fn select_search_result(
     purpose: SelectionPurpose,
 ) -> Result<Option<SearchResult>> {
     if results.is_empty() {
-        return Err(AniError::UnavailableNoResults);
+        return Err(AniError::NoSearchResults);
     }
     let index = if let Some(index) = nth {
         index
             .checked_sub(1)
             .filter(|index| *index < results.len())
-            .ok_or(AniError::InputSelectionOutOfRange)?
+            .ok_or(AniError::SelectionOutOfRange {
+                max: results.len(),
+                selected: nth,
+            })?
     } else if results.len() == 1 {
         return Ok(Some(results[0].clone()));
     } else {
@@ -927,7 +962,7 @@ impl SelectionPurpose {
 
 fn select_episode(episodes: &[String]) -> Result<Option<String>> {
     if episodes.is_empty() {
-        return Err(AniError::UnavailableNoEpisodes);
+        return Err(AniError::NoEpisodesAvailable { anime: None });
     }
     let mut items = vec!["← Back to anime results".to_owned()];
     items.extend(episodes.iter().cloned());
@@ -946,7 +981,7 @@ fn select_initial_episodes(
     purpose: SelectionPurpose,
 ) -> Result<Option<String>> {
     if episodes.is_empty() {
-        return Err(AniError::UnavailableNoEpisodes);
+        return Err(AniError::NoEpisodesAvailable { anime: None });
     }
     if multi {
         return select_multiple_episodes(episodes, purpose);
@@ -1027,13 +1062,16 @@ async fn continue_selection(
         }
     }
     if candidates.is_empty() {
-        return Err(AniError::UnavailableNoResults);
+        return Err(AniError::NoSearchResults);
     }
     let index = if let Some(index) = nth {
         index
             .checked_sub(1)
             .filter(|index| *index < candidates.len())
-            .ok_or(AniError::InputSelectionOutOfRange)?
+            .ok_or(AniError::SelectionOutOfRange {
+                max: candidates.len(),
+                selected: nth,
+            })?
     } else {
         let mut items = vec!["← Cancel".to_owned()];
         items.extend(
@@ -1139,8 +1177,13 @@ async fn preflight_downloads(
             let streams = clients
                 .streams(&show.id, show.provider, episode, mode)
                 .await?;
-            let stream = choose_download_stream(&streams, quality)
-                .ok_or(AniError::UnavailableNoStreams)?;
+            let stream = choose_download_stream(&streams, quality).ok_or_else(|| {
+                AniError::NoPlayableSources {
+                    anime: Some(show.name.clone()),
+                    episode: Some(episode.clone()),
+                    mode: Some(mode.to_string()),
+                }
+            })?;
             Ok(PreparedEpisode {
                 episode: episode.clone(),
                 stream,
@@ -1169,7 +1212,12 @@ fn collect_download_preflight(
     for (episode, result) in results {
         match result {
             Ok(value) => prepared.push(value),
-            Err(AniError::UnavailableNoEpisodes | AniError::UnavailableNoStreams) => {
+            Err(
+                AniError::NoEpisodesAvailable { .. }
+                | AniError::NoPlayableSources { .. }
+                | AniError::UnavailableNoEpisodes
+                | AniError::UnavailableNoStreams,
+            ) => {
                 unavailable.push(UnavailableDownload {
                     episode,
                     reason: "no downloadable sources".to_string(),
@@ -1204,7 +1252,11 @@ fn download_preflight_error(failures: &[UnavailableDownload]) -> AniError {
         .collect::<Vec<_>>()
         .join(", ");
     eprintln!("Download preflight failures: {details}");
-    AniError::UnavailableNoResults
+    AniError::NoPlayableSources {
+        anime: None,
+        episode: None,
+        mode: None,
+    }
 }
 
 fn require_download_preflight(preflight: DownloadPreflight) -> Result<Vec<PreparedEpisode>> {
@@ -1229,9 +1281,14 @@ async fn prepare_episode(
             context.mode,
         )
         .await?;
-    let stream = choose_quality(&streams, quality)
-        .cloned()
-        .ok_or(AniError::UnavailableNoStreams)?;
+    let stream =
+        choose_quality(&streams, quality)
+            .cloned()
+            .ok_or_else(|| AniError::NoPlayableSources {
+                anime: Some(context.show.name.clone()),
+                episode: Some(episode.to_string()),
+                mode: Some(context.mode.to_string()),
+            })?;
     Ok(PreparedEpisode {
         episode: episode.into(),
         stream,
@@ -1438,12 +1495,15 @@ fn adjacent_episode(episodes: &[String], current: &str, delta: isize) -> Result<
     let index = episodes
         .iter()
         .position(|value| value == current)
-        .ok_or(AniError::InputInvalidEpisode)? as isize
+        .ok_or_else(|| AniError::InvalidEpisodeSelection {
+            episode: current.to_string(),
+            reason: "current episode is not in the available episode list".to_string(),
+        })? as isize
         + delta;
     episodes
         .get(index as usize)
         .cloned()
-        .ok_or(AniError::UnavailableNoEpisodes)
+        .ok_or(AniError::NoEpisodesAvailable { anime: None })
 }
 
 fn clean_title(value: &str) -> String {
@@ -1456,7 +1516,10 @@ fn clean_title(value: &str) -> String {
 }
 fn dialog_error(error: dialoguer::Error) -> AniError {
     eprintln!("Interactive selection failed: {error}");
-    AniError::InputSelectionOutOfRange
+    AniError::SelectionOutOfRange {
+        max: 0,
+        selected: None,
+    }
 }
 
 #[cfg(test)]

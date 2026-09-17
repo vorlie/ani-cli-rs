@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use ani_lib::{AniError, ErrorCode, ErrorReport, ErrorVerbosity};
 
 #[test]
 fn help_lists_legacy_and_scriptable_interfaces() {
@@ -164,4 +165,117 @@ fn showcase_adult_filter_is_explicit() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Velvet Nebula"));
+}
+
+#[test]
+fn error_codes_are_stable() {
+    // Test that error codes maintain their IDs
+    assert_eq!(ErrorCode::NoPlayableSources.id(), "ACL-3001");
+    assert_eq!(ErrorCode::ProviderUnavailable.id(), "ACL-1001");
+    assert_eq!(ErrorCode::NoSearchResults.id(), "ACL-2001");
+    assert_eq!(ErrorCode::PlayerNotFound.id(), "ACL-5001");
+    assert_eq!(ErrorCode::NoDownloadTool.id(), "ACL-4002");
+}
+
+#[test]
+fn error_slugs_are_consistent() {
+    // Test that error slugs are URL-friendly
+    assert_eq!(ErrorCode::NoPlayableSources.slug(), "no-playable-sources");
+    assert_eq!(ErrorCode::ProviderUnavailable.slug(), "provider-unavailable");
+    assert_eq!(ErrorCode::NoSearchResults.slug(), "no-search-results");
+}
+
+#[test]
+fn error_code_mapping_works() {
+    // Test that AniError maps to correct ErrorCode
+    let error = AniError::NoPlayableSources {
+        anime: Some("Test Anime".to_string()),
+        episode: Some("1".to_string()),
+        mode: Some("sub".to_string()),
+    };
+    assert_eq!(error.code(), ErrorCode::NoPlayableSources);
+
+    let error = AniError::EmptySearchQuery;
+    assert_eq!(error.code(), ErrorCode::EmptySearchQuery);
+
+    let error = AniError::NoDownloadTool;
+    assert_eq!(error.code(), ErrorCode::NoDownloadTool);
+}
+
+#[test]
+fn error_report_normal_mode_includes_code_and_title() {
+    let error = AniError::NoPlayableSources {
+        anime: Some("Test Anime".to_string()),
+        episode: Some("1".to_string()),
+        mode: Some("sub".to_string()),
+    };
+    let report = ErrorReport::from_error(&error);
+    let output = report.render(ErrorVerbosity::Normal);
+
+    assert!(output.contains("ACL-3001"));
+    assert!(output.contains("No playable sources found"));
+    // In verbose mode, context would be shown
+    let verbose_output = report.render(ErrorVerbosity::Verbose);
+    assert!(verbose_output.contains("Test Anime"));
+    assert!(verbose_output.contains("Episode: 1"));
+    assert!(verbose_output.contains("Mode: sub"));
+}
+
+#[test]
+fn error_report_verbose_mode_includes_context() {
+    let error = AniError::NoPlayableSources {
+        anime: Some("Test Anime".to_string()),
+        episode: Some("1".to_string()),
+        mode: Some("sub".to_string()),
+    };
+    let report = ErrorReport::from_error(&error);
+    let output = report.render(ErrorVerbosity::Verbose);
+
+    assert!(output.contains("ACL-3001"));
+    assert!(output.contains("Anime: Test Anime"));
+    assert!(output.contains("Episode: 1"));
+    assert!(output.contains("Mode: sub"));
+}
+
+#[test]
+fn error_report_debug_mode_includes_diagnostics() {
+    let error = AniError::NoPlayableSources {
+        anime: Some("Test Anime".to_string()),
+        episode: Some("1".to_string()),
+        mode: Some("sub".to_string()),
+    };
+    let report = ErrorReport::from_error(&error);
+    let output = report.render(ErrorVerbosity::Debug);
+
+    assert!(output.contains("ACL-3001"));
+    assert!(output.contains("Debug information"));
+    assert!(output.contains("error_code"));
+    assert!(output.contains("error_slug"));
+}
+
+#[test]
+fn error_report_includes_help_text() {
+    let error = AniError::NoDownloadTool;
+    let report = ErrorReport::from_error(&error);
+    let output = report.render(ErrorVerbosity::Normal);
+
+    assert!(output.contains("help:"));
+    assert!(output.contains("yt-dlp"));
+    assert!(output.contains("FFmpeg"));
+}
+
+#[test]
+fn error_report_includes_documentation_link() {
+    let error = AniError::NoPlayableSources {
+        anime: None,
+        episode: None,
+        mode: None,
+    };
+    let report = ErrorReport::from_error(&error);
+    let output = report.render(ErrorVerbosity::Normal);
+
+    assert!(output.contains("docs:"));
+    assert!(output.contains("vorlie.github.io"));
+    // The slug is part of the docs URL
+    assert!(output.contains("errors"));
 }
