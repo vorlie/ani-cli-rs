@@ -20,10 +20,7 @@ pub fn init() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path);
+    let file = OpenOptions::new().create(true).append(true).open(&log_path);
 
     match file {
         Ok(mut file) => {

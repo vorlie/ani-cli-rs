@@ -53,9 +53,9 @@ async fn fetch_latest_release() -> Result<GitHubRelease> {
 
 async fn download_installer(tag: &str) -> Result<PathBuf> {
     if !valid_tag(tag) {
-        return Err(AniError::Update(format!(
-            "GitHub returned an unsafe release tag: {tag}"
-        )));
+        return Err(AniError::InvalidReleaseTag {
+            tag: tag.to_string(),
+        });
     }
     let extension = if cfg!(windows) { "ps1" } else { "sh" };
     let response = reqwest::Client::builder()
@@ -69,7 +69,9 @@ async fn download_installer(tag: &str) -> Result<PathBuf> {
         .await?;
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|error| AniError::Update(format!("system clock error: {error}")))?
+        .map_err(|error| AniError::UpdateCheckFailed {
+            reason: format!("system clock error: {error}"),
+        })?
         .as_millis();
     let path = std::env::temp_dir().join(format!(
         "ani-cli-rs-update-{}-{timestamp}.{extension}",
@@ -95,7 +97,7 @@ async fn launch_installer(script: &std::path::Path) -> Result<()> {
     }
     command
         .spawn()
-        .map_err(|error| AniError::Update(format!("could not start PowerShell: {error}")))?;
+        .map_err(|_| AniError::InstallerExecutionFailed { exit_code: None })?;
     println!("The installer will continue after ani-cli-rs exits.");
     Ok(())
 }
@@ -106,24 +108,23 @@ async fn launch_installer(script: &std::path::Path) -> Result<()> {
         .arg(script)
         .status()
         .await
-        .map_err(|error| AniError::Update(format!("could not start installer: {error}")))?;
+        .map_err(|_| AniError::InstallerExecutionFailed { exit_code: None })?;
     let _ = tokio::fs::remove_file(script).await;
     if status.success() {
         Ok(())
     } else {
-        Err(AniError::Update(format!(
-            "installer exited with {}",
-            status.code().unwrap_or(1)
-        )))
+        Err(AniError::InstallerExecutionFailed {
+            exit_code: status.code(),
+        })
     }
 }
 
 #[cfg(target_os = "macos")]
 async fn launch_installer(script: &std::path::Path) -> Result<()> {
     let _ = tokio::fs::remove_file(script).await;
-    Err(AniError::Update(
-        "official macOS releases are not published; update by rebuilding from source".into(),
-    ))
+    Err(AniError::PlatformNotSupported {
+        platform: "macOS".to_string(),
+    })
 }
 
 fn installer_url(tag: &str, extension: &str) -> String {
@@ -138,10 +139,12 @@ fn valid_tag(tag: &str) -> bool {
 }
 
 fn is_newer_release(current: &str, latest: &str) -> Result<bool> {
-    let current = version_components(current)
-        .ok_or_else(|| AniError::Update(format!("invalid current version: {current}")))?;
-    let latest = version_components(latest)
-        .ok_or_else(|| AniError::Update(format!("invalid release version: {latest}")))?;
+    let current = version_components(current).ok_or_else(|| AniError::UpdateCheckFailed {
+        reason: format!("invalid current version: {current}"),
+    })?;
+    let latest = version_components(latest).ok_or_else(|| AniError::UpdateCheckFailed {
+        reason: format!("invalid release version: {latest}"),
+    })?;
     Ok(latest > current)
 }
 

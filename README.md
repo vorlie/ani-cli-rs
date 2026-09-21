@@ -517,6 +517,33 @@ Finalization
 
 This distinction matters: reinstalling ani-cli-rs will not fix a provider outage, and changing players will not fix an episode that failed during source resolution.
 
+### Error codes
+
+ani-cli-rs uses stable error codes to make failures easier to understand and report. Error codes follow the format `ACL-xxxx`:
+
+- **ACL-1xxx**: Network / provider errors
+- **ACL-2xxx**: Search / anime / episode errors  
+- **ACL-3xxx**: Streaming / source errors
+- **ACL-4xxx**: Download errors
+- **ACL-5xxx**: Playback errors
+- **ACL-6xxx**: Filesystem / configuration errors
+- **ACL-7xxx**: Authentication / external services
+- **ACL-9xxx**: Internal / unexpected errors
+
+When reporting issues, always include the error code (e.g., `ACL-3001`) along with the complete error message.
+
+Example error output:
+```
+error[ACL-3001]: No playable sources found
+
+No playable sources were found for episode 7.
+
+help: Try another provider or try again later.
+docs: https://vorlie.github.io/ani-cli-rs/errors#ACL-3001
+```
+
+For a complete error code reference with causes and solutions, see the **[Error codes documentation](https://vorlie.github.io/ani-cli-rs/errors/)**.
+
 See the **[Troubleshooting guide](https://vorlie.github.io/ani-cli-rs/support/troubleshooting/)** for diagnostic steps and logging information.
 
 ---

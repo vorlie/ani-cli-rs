@@ -53,6 +53,18 @@ Read [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) before changing the An
 - Add parser or integration tests for new flags and environment variables.
 - Document intentional Windows, Linux, or macOS differences.
 
+## Error handling and reporting
+
+ani-cli-rs uses stable error codes (e.g., `ACL-3001`) to make failures easier to understand and report. When contributing error-related changes:
+
+- Use structured error variants with context fields
+- Include error code stability tests for new error types
+- Update the error documentation in `website/docs/errors/index.md`
+- Include the error code in issue titles and descriptions
+- Run `cargo test` to verify error code stability tests pass
+
+For the complete error code reference, see the [Error codes documentation](https://vorlie.github.io/ani-cli-rs/errors/).
+
 ## Commits and pull requests
 
 Use concise, imperative commit messages. Conventional prefixes such as `fix:`, `feat:`, `docs:`, `test:`, and `chore:` are encouraged but not mandatory.

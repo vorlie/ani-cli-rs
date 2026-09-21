@@ -24,7 +24,7 @@ impl HistoryStore {
             return Ok(Self::new(PathBuf::from(path).join("ani-hsts")));
         }
         let project = directories::ProjectDirs::from("org", "ani-cli", "ani-cli")
-            .ok_or(AniError::HistoryStateDirectory)?;
+            .ok_or(AniError::HistoryStateDirectoryError)?;
         let directory = project
             .state_dir()
             .unwrap_or_else(|| project.data_local_dir());
@@ -39,7 +39,7 @@ impl HistoryStore {
         let text = match tokio::fs::read_to_string(&self.path).await {
             Ok(value) => value,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(AniError::io_error(error, "reading history file")),
         };
         Ok(text
             .lines()
@@ -74,7 +74,9 @@ impl HistoryStore {
 
     async fn write(&self, entries: &[HistoryEntry]) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|error| AniError::io_error(error, "creating history directory"))?;
         }
         let text = entries
             .iter()
@@ -88,20 +90,29 @@ impl HistoryStore {
             })
             .collect::<String>();
         let temporary = self.path.with_extension("new");
-        tokio::fs::write(&temporary, text).await?;
-        if tokio::fs::try_exists(&self.path).await? {
-            tokio::fs::remove_file(&self.path).await?;
+        tokio::fs::write(&temporary, text)
+            .await
+            .map_err(|error| AniError::io_error(error, "writing history file"))?;
+        if tokio::fs::try_exists(&self.path)
+            .await
+            .map_err(|error| AniError::io_error(error, "checking history file"))?
+        {
+            tokio::fs::remove_file(&self.path)
+                .await
+                .map_err(|error| AniError::io_error(error, "replacing history file"))?;
         }
-        tokio::fs::rename(temporary, &self.path).await?;
+        tokio::fs::rename(temporary, &self.path)
+            .await
+            .map_err(|error| AniError::io_error(error, "finalizing history file"))?;
         Ok(())
     }
 }
 
 fn entry_valid(entry: &HistoryEntry) -> Result<()> {
     if entry.episode.is_empty() || entry.show_id.is_empty() || entry.title.is_empty() {
-        Err(AniError::History(
-            "history entry contains an empty field".into(),
-        ))
+        Err(AniError::InvalidHistoryEntry {
+            reason: "history entry contains an empty field".into(),
+        })
     } else {
         Ok(())
     }

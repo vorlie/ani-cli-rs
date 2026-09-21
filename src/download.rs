@@ -120,24 +120,26 @@ async fn download_subtitle_track(
     }
     let response = request.send().await?;
     if !response.status().is_success() {
-        return Err(AniError::Download(format!(
-            "subtitle server returned {}",
-            response.status()
-        )));
+        return Err(AniError::SubtitleDownloadFailed {
+            track: track.label.clone(),
+            reason: format!("subtitle server returned {}", response.status()),
+        });
     }
-    if response
+    if let Some(length) = response
         .content_length()
-        .is_some_and(|length| length > MAX_SUBTITLE_BYTES as u64)
+        .filter(|&length| length > MAX_SUBTITLE_BYTES as u64)
     {
-        return Err(AniError::Download(
-            "subtitle track exceeds the 16 MiB limit".into(),
-        ));
+        return Err(AniError::SubtitleSizeExceeded {
+            size: length as usize,
+            limit: MAX_SUBTITLE_BYTES,
+        });
     }
     let bytes = response.bytes().await?;
     if bytes.len() > MAX_SUBTITLE_BYTES {
-        return Err(AniError::Download(
-            "subtitle track exceeds the 16 MiB limit".into(),
-        ));
+        return Err(AniError::SubtitleSizeExceeded {
+            size: bytes.len(),
+            limit: MAX_SUBTITLE_BYTES,
+        });
     }
     let stem = target
         .file_stem()
@@ -304,10 +306,12 @@ async fn download_hls(stream: &StreamLink, target: &Path) -> Result<()> {
     }
 
     if failures.is_empty() {
-        Err(AniError::DownloadNoDownloader)
+        Err(AniError::NoDownloadTool)
     } else {
         eprintln!("HLS download failures: {}", failures.join("; "));
-        Err(AniError::DownloadFailed)
+        Err(AniError::HlsDownloadFailed {
+            reason: failures.join("; "),
+        })
     }
 }
 
@@ -497,10 +501,10 @@ async fn download_direct(stream: &StreamLink, target: &Path) -> Result<()> {
     }
     let response = request.send().await?;
     if !response.status().is_success() {
-        return Err(AniError::Download(format!(
-            "media server returned {}",
-            response.status()
-        )));
+        return Err(AniError::DownloadFailed {
+            reason: format!("media server returned {}", response.status()),
+            source: None,
+        });
     }
     let append = existing > 0 && response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
     let initial = if append { existing } else { 0 };
