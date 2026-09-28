@@ -10,7 +10,7 @@ Search, stream, and download anime directly from your terminal with native playb
 [![Documentation](https://img.shields.io/badge/docs-online-blue?style=flat-square)](https://vorlie.github.io/ani-cli-rs/)
 [![GitHub](https://img.shields.io/github/stars/vorlie/ani-cli-rs?style=flat-square)](https://github.com/vorlie/ani-cli-rs)
 [![License](https://img.shields.io/github/license/vorlie/ani-cli-rs?style=flat-square)](LICENSE)
-[![Discord](https://img.shields.io/discord/1499791569870655669?style=flat-square\&logo=discord\&logoColor=white)](https://discord.gg/9SXX6ddpNR)
+[![Discord](https://img.shields.io/discord/F7EFsnvz8g?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/F7EFsnvz8g)
 
 Crates:
 [![Crates.io Version](https://img.shields.io/crates/v/ani-cli-rs?style=flat-square)](https://crates.io/crates/ani-cli-rs)
@@ -24,7 +24,7 @@ Github:
 [**Installation**](https://vorlie.github.io/ani-cli-rs/guides/installation/) ·
 [**CLI Reference**](https://vorlie.github.io/ani-cli-rs/reference/cli/) ·
 [**Contributing**](CONTRIBUTING.md) ·
-[**Discord**](https://discord.gg/9SXX6ddpNR)
+[**Discord**](https://discord.gg/F7EFsnvz8g)
 
 </div>
 
@@ -59,6 +59,10 @@ Unlike the original Bash project, the executable is intentionally named `ani-cli
 ## Community
 
 ani-cli-rs is built in the open and improved through code, bug reports, documentation, testing, and provider work.
+
+### Discord
+
+For support, troubleshooting, provider issues, join the [ani-cli Discord](https://discord.gg/F7EFsnvz8g) and use `#support`.
 
 <div align="center">
 
