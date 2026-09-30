@@ -286,6 +286,7 @@ async fn download_hls(stream: &StreamLink, target: &Path) -> Result<()> {
             ToolAttempt::Failed(error) => {
                 eprintln!("yt-dlp with aria2c failed ({error}); retrying with yt-dlp...");
                 failures.push(error);
+                tokio::time::sleep(Duration::from_secs(10)).await; // needs tokio's "time" feature
             }
             ToolAttempt::Unavailable => {}
         }
@@ -345,25 +346,37 @@ async fn run_tool(program: &str, args: &[String]) -> ToolAttempt {
     }
 }
 
+fn hls_parallelism(stream: &StreamLink) -> u8 {
+    let mp4upload = stream.provider.to_ascii_lowercase().contains("mp4upload");
+    if mp4upload { 2 } else { 2 }
+}
+
 fn yt_dlp_args(stream: &StreamLink, target: &Path, aria2: bool) -> Vec<String> {
+    let jobs = hls_parallelism(stream);
     let mut args = Vec::new();
     if aria2 {
         args.extend(["--downloader".into(), "aria2c".into()]);
+        // Override yt-dlp's built-in -x16 -j16 -s16. HLS fragments are small,
+        // so one connection per fragment is enough.
+        let mut aria_args = format!(
+            "aria2c:-x1 -s1 -j{jobs} --max-tries=5 --retry-wait=5 --timeout=30"
+        );
         if let Some(config) = aria2_config_path() {
-            args.extend([
-                "--downloader-args".into(),
-                format!("aria2c:--conf-path=\"{}\"", config.to_string_lossy()),
-            ]);
+            aria_args.push_str(&format!(" --conf-path=\"{}\"", config.to_string_lossy()));
         }
+        args.extend(["--downloader-args".into(), aria_args]);
     }
     append_yt_dlp_headers(&mut args, stream);
     args.extend([
         "--no-skip-unavailable-fragments".into(),
         "--fragment-retries".into(),
-        "infinite".into(),
+        "10".into(),
+        "--retry-sleep".into(),
+        "fragment:exp=2:60".into(), // exponential backoff, 1s up to 30s
+        "--sleep-requests".into(), "0.25".into(),
         "--progress".into(),
         "-N".into(),
-        "16".into(),
+        jobs.to_string(),
         "-o".into(),
         target.to_string_lossy().into_owned(),
         stream.url.clone(),
