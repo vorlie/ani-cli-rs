@@ -198,7 +198,7 @@ impl AnikotoCzClient {
                 }
             };
 
-            let results = parse_search(&self.inner.base, &html)?;
+            let results = parse_search(&self.inner.base, &html, _mode)?;
             if !results.is_empty() {
                 return Ok(results);
             }
@@ -746,7 +746,44 @@ fn filter_search_urls(query: &str) -> Vec<String> {
     filter_search_urls_for_base("https://anikoto.cz", query, None)
 }
 
-fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
+fn parse_episode_counts(element: &scraper::ElementRef) -> (u32, u32, u32) {
+    let sub = element
+        .select(&Selector::parse(".ep-status.sub").unwrap())
+        .find_map(|candidate| {
+            candidate
+                .text()
+                .collect::<String>()
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .unwrap_or(0);
+    let dub = element
+        .select(&Selector::parse(".ep-status.dub").unwrap())
+        .find_map(|candidate| {
+            candidate
+                .text()
+                .collect::<String>()
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .unwrap_or(0);
+    let total = element
+        .select(&Selector::parse(".ep-status.total").unwrap())
+        .find_map(|candidate| {
+            candidate
+                .text()
+                .collect::<String>()
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .unwrap_or(0);
+    (sub, dub, total)
+}
+
+fn parse_search(base: &str, html: &str, mode: TranslationType) -> Result<Vec<SearchResult>> {
     let document = Html::parse_fragment(html);
     let list = Selector::parse("#list-items .item")
         .map_err(|_| provider_invalid_response("invalid result list selector"))?;
@@ -790,14 +827,20 @@ fn parse_search(base: &str, html: &str) -> Result<Vec<SearchResult>> {
             .map(|value| clean_text(&value.text().collect::<String>()))
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| slug.replace('-', " "));
+        let (sub_count, dub_count, total_count) = parse_episode_counts(&element);
+        let episode_count = match mode {
+            TranslationType::Sub => sub_count.max(total_count),
+            TranslationType::Dub => dub_count.max(total_count),
+        };
+        let total = total_count.max(sub_count).max(dub_count);
         results.push(SearchResult {
             id: encode_id(&AnikotoCzId {
                 slug: slug.into(),
                 title: title.clone(),
-                episodes: None,
+                episodes: (total > 0).then_some(total),
             })?,
             name: title,
-            episodes: 0.0,
+            episodes: episode_count as f64,
             provider: CatalogProvider::Anikoto2,
         });
     }
@@ -1410,14 +1453,21 @@ mod tests {
     fn parses_search_and_deduplicates_slugs() {
         let html = r#"
             <div id="list-items" class="ani items">
-              <div class="item"><a href="/watch/black-torch-1d364"><div class="name">Black Torch</div></a></div>
+              <div class="item">
+                <a href="/watch/black-torch-1d364">
+                  <div class="name">Black Torch</div>
+                  <div class="ep-status total"><span>22</span></div>
+                </a>
+              </div>
               <div class="item"><a href="/watch/black-torch-1d364"><span class="d-title">Duplicate</span></a></div>
             </div>
         "#;
-        let values = parse_search("https://anikoto.cz", html).unwrap();
+        let values = parse_search("https://anikoto.cz", html, TranslationType::Sub).unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].name, "Black Torch");
+        assert_eq!(values[0].episodes, 22.0);
         assert_eq!(values[0].provider, CatalogProvider::Anikoto2);
+        assert_eq!(decode_id(&values[0].id).unwrap().episodes, Some(22));
     }
 
     #[test]
@@ -1430,7 +1480,7 @@ mod tests {
               <div class="item"><a href="/watch/one-piece-episode-of-luffy-hand-island-adventure-br7lf/ep-1"><span class="d-title">One Piece: Episode of Luffy - Hand Island Adventure</span></a></div>
             </div>
         "#;
-        let values = parse_search("https://anikoto.cz", html).unwrap();
+        let values = parse_search("https://anikoto.cz", html, TranslationType::Sub).unwrap();
         assert_eq!(values.len(), 1);
         assert_eq!(
             values[0].name,
