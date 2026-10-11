@@ -23,7 +23,7 @@ use tracing::{debug, info};
 mod log;
 mod updater;
 
-const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto API/MegaPlay is the default; select the independent Anikoto.cz catalog with --provider anikoto2 or ANI_CLI_RS_PROVIDER=anikoto2. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS, an Android media player from Termux, and mpv on other desktops by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
+const LONG_ABOUT: &str = "A cross-platform Rust port of ani-cli for browsing, resolving, playing, and downloading anime from Anikoto providers.\n\nThe interactive workflow searches the selected subbed or dubbed catalog, lists available episodes, resolves current provider links, selects the requested quality, and opens an external player. Anikoto.cz is the default catalog; use --provider anikoto or ANI_CLI_RS_PROVIDER=anikoto to switch to the legacy Anikoto API/MegaPlay provider. Watch history uses the Bash ani-cli tab-separated format, so an existing history directory can be reused.\n\nThe scraper and KotoCDN compatibility relay are implemented entirely in Rust; Python, curl, sed, OpenSSL, Botan, and fzf are not required. Playback uses IINA on macOS, an Android media player from Termux, and mpv on other desktops by default, with optional VLC and Syncplay integrations. Downloads prefer aria2c for parallel transfers when available, with yt-dlp, FFmpeg, and the built-in resumable downloader as fallbacks.";
 
 const AFTER_HELP: &str = concat!(
     "\u{1b}[38;5;208mKEYBOARD NAVIGATION:\u{1b}[0m\n",
@@ -104,7 +104,7 @@ fn cli_styles() -> Styles {
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Catalog provider: anikoto (default) or anikoto2 (Anikoto.cz).
+    /// Catalog provider: anikoto2 (default) or anikoto (legacy Anikoto API/MegaPlay).
     #[arg(short = 'p', long, global = true, env = "ANI_CLI_RS_PROVIDER")]
     provider: Option<CatalogProvider>,
     /// Continue from the next unwatched episode in the ani-cli history.

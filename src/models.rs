@@ -7,9 +7,9 @@ use crate::{AniError, Result};
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CatalogProvider {
-    Anikoto,
     #[default]
     Anikoto2,
+    Anikoto,
 }
 
 impl fmt::Display for CatalogProvider {
