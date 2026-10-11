@@ -1,5 +1,7 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
+use base64::{Engine as _};
+
 use ani_lib::{
     AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, ErrorReport,
     ErrorVerbosity, HistoryEntry, HistoryStore, Player, PlayerKind, PlayerOptions, Result,
@@ -409,7 +411,8 @@ async fn run(cli: Cli) -> Result<()> {
                     } else {
                         SelectionPurpose::Watch
                     };
-                    let Some(show) = select_search_result(&results, cli.select_nth, purpose)?
+                    let Some(show) =
+                        select_search_result(&results, cli.select_nth, purpose)?
                     else {
                         continue 'search;
                     };
@@ -772,19 +775,15 @@ async fn run_command(
     let provider = selected_provider.unwrap_or_default();
     match command {
         Commands::Search(args) => {
+            let mode = TranslationType::from_str(&args.mode)?;
             let values = clients
-                .search_with_options(
-                    provider,
-                    &args.query,
-                    TranslationType::from_str(&args.mode)?,
-                    SearchOptions {
-                        allow_adult: args.allow_adult,
-                        sort: args.sort,
-                    },
-                )
+                .search_with_options(provider, &args.query, mode, SearchOptions {
+                    allow_adult: args.allow_adult,
+                    sort: args.sort,
+                })
                 .await?;
             output(&values, args.json, |value| {
-                format!("{}\t{} ({} episodes)", value.id, value.name, value.episodes)
+                format!("{}\t{}", value.id, format_search_label(value))
             })?;
         }
         Commands::Episodes(args) => {
@@ -887,6 +886,32 @@ fn output<T: Serialize>(values: &[T], json: bool, text: impl Fn(&T) -> String) -
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AnikotoCzSearchMetadata {
+    episodes: Option<u32>,
+}
+
+fn anikoto2_total_episodes(id: &str) -> Option<u32> {
+    let payload = id.strip_prefix("anikoto2:")?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let metadata: AnikotoCzSearchMetadata = serde_json::from_slice(&bytes).ok()?;
+    metadata.episodes
+}
+
+fn format_search_label(value: &SearchResult) -> String {
+    if value.provider == CatalogProvider::Anikoto2 {
+        let total = anikoto2_total_episodes(&value.id).unwrap_or(value.episodes as u32);
+        let current = value.episodes as u32;
+        if total > 0 {
+            return format!("{} ({current}/{total})", value.name);
+        }
+    }
+    format!("{} ({} episodes)", value.name, value.episodes)
+}
+
 fn select_search_result(
     results: &[SearchResult],
     nth: Option<usize>,
@@ -907,11 +932,7 @@ fn select_search_result(
         return Ok(Some(results[0].clone()));
     } else {
         let mut items = vec!["← Back to search".to_owned()];
-        items.extend(
-            results
-                .iter()
-                .map(|value| format!("{} ({} episodes)", value.name, value.episodes)),
-        );
+        items.extend(results.iter().map(|value| format_search_label(value)));
         let Some(index) = FuzzySelect::with_theme(&ColorfulTheme::default())
             .with_prompt(purpose.anime_prompt())
             .items(&items)
