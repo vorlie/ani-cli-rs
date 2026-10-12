@@ -3,6 +3,7 @@ use std::{
     io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     process::Stdio,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use tokio::process::Command;
@@ -264,7 +265,11 @@ impl Player {
 
         let mut command = Command::new(&self.options.executable);
         let attached = self.options.no_detach || force_attached;
-        let args = self.command_args_inner(stream, title, attached);
+        let args = if self.options.kind == PlayerKind::Vlc {
+            self.vlc_command_args(stream, title, attached).await?
+        } else {
+            self.command_args_inner(stream, title, attached)
+        };
         info!(
             title = %title,
             executable = %self.options.executable.display(),
@@ -353,6 +358,31 @@ impl Player {
                 }
             }
         }
+    }
+
+    async fn vlc_command_args(
+        &self,
+        stream: &StreamLink,
+        title: &str,
+        attached: bool,
+    ) -> Result<Vec<String>> {
+        let referer = stream.headers.referer.as_deref().unwrap_or("");
+        let mut args = vec!["--play-and-exit".into(), format!("--meta-title={title}")];
+        if !referer.is_empty() {
+            args.push(format!("--http-referrer={referer}"));
+        }
+        if let Some(agent) = stream.headers.extra.get("User-Agent") {
+            args.push(format!("--http-user-agent={agent}"));
+        }
+        for subtitle_path in prepare_vlc_subtitles(stream).await? {
+            args.push(format!("--sub-file={subtitle_path}"));
+        }
+        if !attached {
+            args.push(stream.url.clone());
+        } else {
+            args.push(stream.url.clone());
+        }
+        Ok(args)
     }
 
     fn is_android_player(&self) -> bool {
@@ -583,6 +613,100 @@ async fn wait_for_android_player() -> Result<()> {
     Ok(())
 }
 
+async fn prepare_vlc_subtitles(stream: &StreamLink) -> Result<Vec<String>> {
+    if stream.subtitles.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "ani-cli-rs-vlc-subtitles-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    tokio::fs::create_dir_all(&temp_dir).await?;
+
+    let mut local_paths = Vec::new();
+    for (index, track) in stream.subtitles.iter().enumerate() {
+        let path = temp_dir.join(format!(
+            "{index}.{}.{}",
+            sanitize_filename(&track.label),
+            subtitle_extension(&track.url)
+        ));
+        let bytes = fetch_vlc_subtitle(track, &stream.headers).await?;
+        tokio::fs::write(&path, bytes).await?;
+        local_paths.push(path.to_string_lossy().into_owned());
+    }
+
+    Ok(local_paths)
+}
+
+async fn fetch_vlc_subtitle(track: &crate::SubtitleTrack, headers: &crate::RequestHeaders) -> Result<Vec<u8>> {
+    let client = reqwest::Client::builder().build()?;
+    let mut request = client.get(&track.url);
+    if let Some(referer) = &headers.referer {
+        request = request.header(reqwest::header::REFERER, referer);
+    }
+    if let Some(origin) = &headers.origin {
+        request = request.header(reqwest::header::ORIGIN, origin);
+    }
+    for (name, value) in &headers.extra {
+        request = request.header(name, value);
+    }
+
+    let response = request.send().await?;
+    if !response.status().is_success() {
+        return Err(AniError::SubtitleDownloadFailed {
+            track: track.label.clone(),
+            reason: format!("subtitle server returned {}", response.status()),
+        });
+    }
+
+    let bytes = response.bytes().await?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err(AniError::SubtitleSizeExceeded {
+            size: bytes.len(),
+            limit: 16 * 1024 * 1024,
+        });
+    }
+
+    Ok(bytes.to_vec())
+}
+
+fn sanitize_filename(value: &str) -> String {
+    let mut cleaned: String = value
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            other => other,
+        })
+        .collect();
+    if cleaned.is_empty() {
+        cleaned = "subtitle".to_string();
+    }
+    cleaned
+}
+
+fn subtitle_extension(url: &str) -> &'static str {
+    let parsed = url::Url::parse(url).ok();
+    let extension = parsed.and_then(|url| {
+        Path::new(url.path())
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_ascii_lowercase)
+    });
+    match extension.as_deref() {
+        Some("srt") => "srt",
+        Some("ass") => "ass",
+        Some("ssa") => "ssa",
+        Some("vtt") => "vtt",
+        _ => "vtt",
+    }
+}
+
 fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
     let mut args = vec![
         "--tls-verify=no".into(),
@@ -774,6 +898,41 @@ mod tests {
                 "Anime Episode 1",
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn vlc_downloads_remote_subtitles_to_local_files() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/subtitle.vtt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("WEBVTT\n\n00:00.000 --> 00:02.000\nHello from the subtitle."))
+            .mount(&server)
+            .await;
+
+        let stream = StreamLink {
+            url: "https://media.example/episode.m3u8".into(),
+            resolution: "720p".into(),
+            hls: false,
+            provider: "Anikoto".into(),
+            downloadable: true,
+            headers: RequestHeaders::default(),
+            subtitles: vec![SubtitleTrack {
+                label: "English".into(),
+                url: format!("{}/subtitle.vtt", server.uri()),
+                default: true,
+            }],
+        };
+
+        let local_subtitles = prepare_vlc_subtitles(&stream).await.unwrap();
+
+        assert_eq!(local_subtitles.len(), 1);
+        let local_path = Path::new(&local_subtitles[0]);
+        assert!(local_path.is_absolute());
+        assert!(!local_path.to_string_lossy().starts_with("http://"));
+        assert!(!local_path.to_string_lossy().starts_with("https://"));
+        assert!(tokio::fs::read_to_string(local_path).await.unwrap().contains("Hello from the subtitle"));
     }
 
     #[test]
