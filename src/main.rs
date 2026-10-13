@@ -8,8 +8,6 @@ use ani_lib::{
     SearchOptions, SearchResult, SearchSort, StreamLink, TranslationType, choose_quality,
     download_stream, expand_episode_selection, provider_from_show_id,
 };
-#[cfg(debug_assertions)]
-use ani_lib::{RequestHeaders, SubtitleTrack};
 use clap::{
     Args, ColorChoice, Parser, Subcommand,
     builder::Styles,
@@ -20,6 +18,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
+mod cli;
 mod log;
 mod updater;
 
@@ -332,7 +331,7 @@ async fn run(cli: Cli) -> Result<()> {
         } else {
             cli.query.join(" ")
         };
-        return display_next_episode_schedule(&query).await;
+        return cli::display_next_episode_schedule(&query).await;
     }
 
     let clients = ProviderClients::new(cli.demo_mode())?;
@@ -504,52 +503,6 @@ async fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct ScheduleSearchResponse {
-    #[serde(default)]
-    anime: Vec<ScheduleAnime>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ScheduleAnime {
-    title: String,
-    status: String,
-    jpn_time: Option<String>,
-    sub_time: Option<String>,
-    #[serde(default)]
-    names: ScheduleNames,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct ScheduleNames {
-    english: Option<String>,
-    native: Option<String>,
-}
-
-async fn display_next_episode_schedule(query: &str) -> Result<()> {
-    let response = reqwest::Client::builder()
-        .user_agent(concat!("ani-cli-rs/", env!("CARGO_PKG_VERSION")))
-        .build()?
-        .get("https://animeschedule.net/api/v3/anime")
-        .query(&[("q", query)])
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<ScheduleSearchResponse>()
-        .await?;
-    if response.anime.is_empty() {
-        return Err(AniError::NoSearchResults);
-    }
-    for anime in &response.anime {
-        for line in schedule_lines(anime) {
-            println!("{line}");
-        }
-        println!("---");
-    }
-    Ok(())
-}
-
 #[derive(serde::Deserialize)]
 struct GithubRelease {
     tag_name: String,
@@ -588,40 +541,6 @@ async fn check_and_notify_new_version(current_version: &str) -> Result<()> {
     Ok(())
 }
 
-fn schedule_lines(anime: &ScheduleAnime) -> Vec<String> {
-    let mut lines = Vec::with_capacity(5);
-    if let Some(title) = anime.names.english.as_deref() {
-        lines.push(format!("English Title: {title}"));
-    } else {
-        lines.push(format!("English Title: {}", anime.title));
-    }
-    if let Some(title) = anime.names.native.as_deref() {
-        lines.push(format!("Japanese Title: {title}"));
-    }
-    if anime.status != "Finished" {
-        if let Some(time) = anime
-            .jpn_time
-            .as_deref()
-            .filter(|time| valid_release_time(time))
-        {
-            lines.push(format!("Next Raw Release: {time}"));
-        }
-        if let Some(time) = anime
-            .sub_time
-            .as_deref()
-            .filter(|time| valid_release_time(time))
-        {
-            lines.push(format!("Next Sub Release: {time}"));
-        }
-    }
-    lines.push(format!("Status:  {}", anime.status));
-    lines
-}
-
-fn valid_release_time(time: &str) -> bool {
-    !(time.starts_with("0001-") || time.starts_with("0002-"))
-}
-
 enum ProviderClients {
     Live {
         anikoto: AnikotoClient,
@@ -658,7 +577,7 @@ impl ProviderClients {
                 }
             },
             #[cfg(debug_assertions)]
-            Self::Showcase => Ok(showcase_search(provider, query, options)),
+            Self::Showcase => Ok(cli::showcase_search(provider, query, options)),
         }
     }
 
@@ -691,7 +610,7 @@ impl ProviderClients {
                 CatalogProvider::Anikoto2 => anikoto2.streams(show_id, episode, mode).await,
             },
             #[cfg(debug_assertions)]
-            Self::Showcase => Ok(showcase_streams(selected, episode)),
+            Self::Showcase => Ok(cli::showcase_streams(selected, episode)),
         }
     }
 }
@@ -702,69 +621,6 @@ fn routed_provider(show_id: &str, selected: CatalogProvider) -> CatalogProvider 
     } else {
         selected
     }
-}
-
-#[cfg(debug_assertions)]
-fn showcase_search(
-    provider: CatalogProvider,
-    query: &str,
-    options: SearchOptions,
-) -> Vec<SearchResult> {
-    let titles = [
-        ("starfall-atelier", "Starfall Atelier", 12.0, false),
-        ("signal-bloom", "Signal Bloom", 10.0, false),
-        ("midnight-orbit", "Midnight Orbit", 24.0, false),
-        ("velvet-nebula", "Velvet Nebula", 8.0, true),
-    ];
-    let query = query.trim().to_ascii_lowercase();
-    titles
-        .into_iter()
-        .filter(|(_, title, _, adult)| {
-            (query.is_empty() || title.to_ascii_lowercase().contains(&query))
-                && (options.allow_adult || !adult)
-        })
-        .map(|(id, name, episodes, _)| SearchResult {
-            id: match provider {
-                CatalogProvider::Anikoto => format!("anikoto:showcase-{id}"),
-                CatalogProvider::Anikoto2 => format!("anikoto2:showcase-{id}"),
-            },
-            name: name.into(),
-            episodes,
-            provider,
-        })
-        .collect()
-}
-
-#[cfg(debug_assertions)]
-fn showcase_streams(provider: CatalogProvider, episode: &str) -> Vec<StreamLink> {
-    let provider_name = match provider {
-        CatalogProvider::Anikoto => "MegaPlay Showcase",
-        CatalogProvider::Anikoto2 => "Anikoto.cz Showcase",
-    };
-    ["1080p", "720p", "480p"]
-        .into_iter()
-        .map(|resolution| StreamLink {
-            url: format!(
-                "https://media.showcase.invalid/starfall-atelier/episode-{episode}/{resolution}.m3u8"
-            ),
-            resolution: resolution.into(),
-            hls: true,
-            provider: provider_name.into(),
-            downloadable: true,
-            headers: RequestHeaders {
-                referer: Some("https://showcase.invalid/".into()),
-                origin: Some("https://showcase.invalid".into()),
-                ..RequestHeaders::default()
-            },
-            subtitles: vec![SubtitleTrack {
-                label: "English".into(),
-                url: format!(
-                    "https://media.showcase.invalid/starfall-atelier/episode-{episode}/en.vtt"
-                ),
-                default: true,
-            }],
-        })
-        .collect()
 }
 
 async fn run_command(
@@ -1667,42 +1523,6 @@ mod tests {
             Some("1 2.5 10")
         );
         assert_eq!(multiple_episode_selection(&episodes, &[]), None);
-    }
-
-    #[test]
-    fn next_episode_schedule_formats_ongoing_and_finished_titles() {
-        let ongoing = ScheduleAnime {
-            title: "Example".into(),
-            status: "Ongoing".into(),
-            jpn_time: Some("2026-07-24T15:00:00Z".into()),
-            sub_time: Some("2026-07-24T16:00:00Z".into()),
-            names: ScheduleNames {
-                english: Some("Example Anime".into()),
-                native: Some("例".into()),
-            },
-        };
-        assert_eq!(
-            schedule_lines(&ongoing),
-            [
-                "English Title: Example Anime",
-                "Japanese Title: 例",
-                "Next Raw Release: 2026-07-24T15:00:00Z",
-                "Next Sub Release: 2026-07-24T16:00:00Z",
-                "Status:  Ongoing",
-            ]
-        );
-
-        let finished = ScheduleAnime {
-            title: "Old Anime".into(),
-            status: "Finished".into(),
-            jpn_time: Some("2020-01-01T00:00:00Z".into()),
-            sub_time: Some("0001-01-01T00:00:00Z".into()),
-            names: ScheduleNames::default(),
-        };
-        assert_eq!(
-            schedule_lines(&finished),
-            ["English Title: Old Anime", "Status:  Finished"]
-        );
     }
 
     #[test]
