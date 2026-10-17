@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -53,7 +53,7 @@ struct State {
     base: SocketAddr,
     resources: Mutex<HashMap<String, Registered>>,
     tokens_by_url: Mutex<HashMap<String, String>>,
-    counter: AtomicU64,
+    counter: AtomicUsize,
     secret: String,
 }
 
@@ -129,7 +129,7 @@ async fn relay_stream_inner(
         base: address,
         resources: Mutex::new(HashMap::new()),
         tokens_by_url: Mutex::new(HashMap::new()),
-        counter: AtomicU64::new(0),
+        counter: AtomicUsize::new(0),
         secret: format!("{}-{}", std::process::id(), unix_nanos()),
     });
     let token = register(
@@ -1184,7 +1184,7 @@ mod tests {
             base: "127.0.0.1:1".parse().unwrap(),
             resources: Mutex::new(HashMap::new()),
             tokens_by_url: Mutex::new(HashMap::new()),
-            counter: AtomicU64::new(0),
+            counter: AtomicUsize::new(0),
             secret: "test".into(),
         });
         for index in 0..MAX_RESOURCES {
