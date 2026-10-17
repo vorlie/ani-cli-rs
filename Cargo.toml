@@ -19,11 +19,6 @@ path = "src/lib.rs"
 name = "ani-cli-rs"
 path = "src/main.rs"
 
-[[bin]]
-name = "ani-cli-rs-gui"
-path = "src/gui/main.rs"
-required-features = ["gui"]
-
 [features]
 default = []
 gui = ["dep:eframe"]
