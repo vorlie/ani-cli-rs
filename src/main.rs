@@ -1,6 +1,6 @@
 use std::{io::IsTerminal, path::PathBuf, str::FromStr};
 
-use base64::{Engine as _};
+use base64::Engine as _;
 
 use ani_lib::{
     AniError, AnikotoClient, AnikotoCzClient, CatalogProvider, DownloadOptions, ErrorReport,
@@ -411,8 +411,7 @@ async fn run(cli: Cli) -> Result<()> {
                     } else {
                         SelectionPurpose::Watch
                     };
-                    let Some(show) =
-                        select_search_result(&results, cli.select_nth, purpose)?
+                    let Some(show) = select_search_result(&results, cli.select_nth, purpose)?
                     else {
                         continue 'search;
                     };
@@ -777,10 +776,15 @@ async fn run_command(
         Commands::Search(args) => {
             let mode = TranslationType::from_str(&args.mode)?;
             let values = clients
-                .search_with_options(provider, &args.query, mode, SearchOptions {
-                    allow_adult: args.allow_adult,
-                    sort: args.sort,
-                })
+                .search_with_options(
+                    provider,
+                    &args.query,
+                    mode,
+                    SearchOptions {
+                        allow_adult: args.allow_adult,
+                        sort: args.sort,
+                    },
+                )
                 .await?;
             output(&values, args.json, |value| {
                 format!("{}\t{}", value.id, format_search_label(value))

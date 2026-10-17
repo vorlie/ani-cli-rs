@@ -878,7 +878,11 @@ impl<'a> ErrorReport<'a> {
             AniError::NoNativeStreams { provider } => {
                 format!("{provider} did not provide a supported native stream.")
             }
-            AniError::NoPlayableSources { anime, episode, mode } => {
+            AniError::NoPlayableSources {
+                anime,
+                episode,
+                mode,
+            } => {
                 let context = match (anime, episode, mode) {
                     (Some(anim), Some(epi), Some(m)) => {
                         format!(" for {anim} — Episode {epi} ({m})")

@@ -643,7 +643,10 @@ async fn prepare_vlc_subtitles(stream: &StreamLink) -> Result<Vec<String>> {
     Ok(local_paths)
 }
 
-async fn fetch_vlc_subtitle(track: &crate::SubtitleTrack, headers: &crate::RequestHeaders) -> Result<Vec<u8>> {
+async fn fetch_vlc_subtitle(
+    track: &crate::SubtitleTrack,
+    headers: &crate::RequestHeaders,
+) -> Result<Vec<u8>> {
     let client = reqwest::Client::builder().build()?;
     let mut request = client.get(&track.url);
     if let Some(referer) = &headers.referer {
@@ -902,12 +905,18 @@ mod tests {
 
     #[tokio::test]
     async fn vlc_downloads_remote_subtitles_to_local_files() {
-        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+        use wiremock::{
+            Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
+        };
 
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/subtitle.vtt"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("WEBVTT\n\n00:00.000 --> 00:02.000\nHello from the subtitle."))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("WEBVTT\n\n00:00.000 --> 00:02.000\nHello from the subtitle."),
+            )
             .mount(&server)
             .await;
 
@@ -932,7 +941,12 @@ mod tests {
         assert!(local_path.is_absolute());
         assert!(!local_path.to_string_lossy().starts_with("http://"));
         assert!(!local_path.to_string_lossy().starts_with("https://"));
-        assert!(tokio::fs::read_to_string(local_path).await.unwrap().contains("Hello from the subtitle"));
+        assert!(
+            tokio::fs::read_to_string(local_path)
+                .await
+                .unwrap()
+                .contains("Hello from the subtitle")
+        );
     }
 
     #[test]

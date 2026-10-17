@@ -1,6 +1,6 @@
+use ani_lib::{AniError, ErrorCode, ErrorReport, ErrorVerbosity};
 use assert_cmd::Command;
 use predicates::prelude::*;
-use ani_lib::{AniError, ErrorCode, ErrorReport, ErrorVerbosity};
 
 #[test]
 fn help_lists_legacy_and_scriptable_interfaces() {
@@ -181,7 +181,10 @@ fn error_codes_are_stable() {
 fn error_slugs_are_consistent() {
     // Test that error slugs are URL-friendly
     assert_eq!(ErrorCode::NoPlayableSources.slug(), "no-playable-sources");
-    assert_eq!(ErrorCode::ProviderUnavailable.slug(), "provider-unavailable");
+    assert_eq!(
+        ErrorCode::ProviderUnavailable.slug(),
+        "provider-unavailable"
+    );
     assert_eq!(ErrorCode::NoSearchResults.slug(), "no-search-results");
 }
 

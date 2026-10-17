@@ -479,14 +479,24 @@ impl AnikotoCzClient {
             .append_pair("id", data_id)
             .append_pair("type", &mode.to_string());
         let raw_text = self
-            .get_text(source_url.as_str(), embed_url, true, Some(origin), MAX_RESPONSE_BYTES)
+            .get_text(
+                source_url.as_str(),
+                embed_url,
+                true,
+                Some(origin),
+                MAX_RESPONSE_BYTES,
+            )
             .await?;
-        eprintln!("[DEBUG] getSourcesNew raw: {}", &raw_text[..raw_text.len().min(500)]);
-        let mut payload: Value = serde_json::from_str(&raw_text).map_err(|error| AniError::ProviderInvalidResponse {
-            provider: "Anikoto.cz".to_string(),
-            message: "provider returned invalid JSON".to_string(),
-            source: Some(Box::new(error)),
-        })?;
+        eprintln!(
+            "[DEBUG] getSourcesNew raw: {}",
+            &raw_text[..raw_text.len().min(500)]
+        );
+        let mut payload: Value =
+            serde_json::from_str(&raw_text).map_err(|error| AniError::ProviderInvalidResponse {
+                provider: "Anikoto.cz".to_string(),
+                message: "provider returned invalid JSON".to_string(),
+                source: Some(Box::new(error)),
+            })?;
 
         if let Some(enc) = payload.get("enc").and_then(Value::as_str) {
             eprintln!("[DEBUG] enc field found, attempting decryption");
@@ -518,11 +528,23 @@ impl AnikotoCzClient {
                 .get_text(&e1_script_url, embed_url, false, None, MAX_RESPONSE_BYTES)
                 .await?;
             let (key, iv, secret, ttl) = player_parameters(&js)?;
-            eprintln!("[DEBUG] player params: key={:?} iv={:?} ttl={}", &key[..key.len().min(8)], &iv[..iv.len().min(8)], ttl);
+            eprintln!(
+                "[DEBUG] player params: key={:?} iv={:?} ttl={}",
+                &key[..key.len().min(8)],
+                &iv[..iv.len().min(8)],
+                ttl
+            );
 
             let enc_owned = enc.to_owned();
             let mut decrypted = decrypt_source(&enc_owned, &key, &iv)?;
-            eprintln!("[DEBUG] decrypted: {}", serde_json::to_string(&decrypted).unwrap_or_default().chars().take(300).collect::<String>());
+            eprintln!(
+                "[DEBUG] decrypted: {}",
+                serde_json::to_string(&decrypted)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
+            );
 
             fn recursively_sign(v: &mut Value, secret: &str, ttl: u64) {
                 match v {
@@ -553,13 +575,23 @@ impl AnikotoCzClient {
                 }
             }
             recursively_sign(&mut decrypted, &secret, ttl);
-            eprintln!("[DEBUG] signed decrypted: {}", serde_json::to_string(&decrypted).unwrap_or_default().chars().take(300).collect::<String>());
+            eprintln!(
+                "[DEBUG] signed decrypted: {}",
+                serde_json::to_string(&decrypted)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
+            );
             payload
                 .as_object_mut()
                 .unwrap()
                 .insert("sources".to_string(), decrypted);
         } else {
-            eprintln!("[DEBUG] no enc field found in payload, keys: {:?}", payload.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            eprintln!(
+                "[DEBUG] no enc field found in payload, keys: {:?}",
+                payload.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
         }
         Ok(payload)
     }

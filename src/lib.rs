@@ -11,9 +11,6 @@ mod i18n;
 mod models;
 mod player;
 
-#[cfg(feature = "gui")]
-pub mod gui;
-
 pub use anikoto::{
     AnikotoClient, AnikotoClientBuilder, provider_from_show_id,
     requires_hls_relay as anikoto_requires_hls_relay,
