@@ -32,8 +32,8 @@ jobs:
         with:
           python-version: 3.x
 
-      - name: Install MkDocs Material
-        run: pip install mkdocs-material
+      - name: Install MkDocs Shadcn
+        run: pip install mkdocs-shadcn pymdown-extensions Pygments
 
       - name: Build static site
         run: |

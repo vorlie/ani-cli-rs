@@ -38,7 +38,7 @@ Normal tests must remain deterministic and must not require live provider access
 
 ## Scraper changes
 
-Read [`docs/ANIKOTO-KOTOCDN.md`](docs/ANIKOTO-KOTOCDN.md) before changing the Anikoto API/MegaPlay workflow, or [`docs/ANIKOTO-CZ.md`](docs/ANIKOTO-CZ.md) before changing the Anikoto.cz AJAX and server workflow.
+Read [`ANIKOTO-KOTOCDN`](https://vorlie.github.io/ani-cli-rs/development/anikoto-kotocdn/) before changing the Anikoto API/MegaPlay workflow, or [`ANIKOTO-CZ`](https://vorlie.github.io/ani-cli-rs/development/anikoto-cz/) before changing the Anikoto.cz AJAX and server workflow.
 
 - Include sanitized fixtures for new response shapes and encryption paths.
 - Test partial provider failures instead of assuming every extracted source works.

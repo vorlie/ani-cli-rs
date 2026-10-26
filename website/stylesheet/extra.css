@@ -1,0 +1,23 @@
+
+/* Keep code blocks within the content surface */
+pre,
+div.highlight,
+div[class*="highlight-"] {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Scroll horizontally for long code lines, rather than expanding the page */
+pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Let long code blocks shrink inside their parent */
+.highlight,
+.highlight pre,
+pre code {
+  min-width: 0;
+  max-width: 100%;
+}
