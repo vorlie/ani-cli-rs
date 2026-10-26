@@ -10,7 +10,7 @@ Search, stream, and download anime directly from your terminal with native playb
 [![Documentation](https://img.shields.io/badge/docs-online-blue?style=flat-square)](https://vorlie.github.io/ani-cli-rs/)
 [![GitHub](https://img.shields.io/github/stars/vorlie/ani-cli-rs?style=flat-square)](https://github.com/vorlie/ani-cli-rs)
 [![License](https://img.shields.io/github/license/vorlie/ani-cli-rs?style=flat-square)](LICENSE)
-[![Discord](https://img.shields.io/discord/F7EFsnvz8g?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/F7EFsnvz8g)
+[![Discord](https://img.shields.io/discord/931186431215435807?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/F7EFsnvz8g)
 
 Crates:
 [![Crates.io Version](https://img.shields.io/crates/v/ani-cli-rs?style=flat-square)](https://crates.io/crates/ani-cli-rs)
