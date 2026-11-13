@@ -374,6 +374,17 @@ impl AnikotoClient {
                 headers.clone(),
             )]);
         }
+        // A media playlist contains only its video segments when audio is a
+        // separate rendition. Keep the master so the player can follow its
+        // EXT-X-MEDIA audio URI through the relay.
+        if has_separate_audio_rendition(&text) {
+            return Ok(vec![stream_link(
+                url.into(),
+                fallback_resolution.into(),
+                true,
+                headers.clone(),
+            )]);
+        }
         let base = Url::parse(url)?;
         let resolution = Regex::new(r"RESOLUTION=\d+x(\d+)").expect("static regex");
         let mut streams = Vec::new();
@@ -789,6 +800,14 @@ fn apply_headers(
     request
 }
 
+fn has_separate_audio_rendition(playlist: &str) -> bool {
+    playlist.lines().any(|line| {
+        let line = line.trim_start().to_ascii_uppercase();
+        line.starts_with("#EXT-X-MEDIA:")
+            && (line.contains("TYPE=AUDIO") || line.contains("TYPE=\"AUDIO\""))
+    })
+}
+
 async fn checked_json(response: Response, provider: &str) -> Result<Value> {
     let status = response.status();
     if status == StatusCode::TOO_MANY_REQUESTS {
@@ -981,6 +1000,16 @@ mod tests {
         assert!(is_megaplay_media_host("megap.kotocdn.site"));
         assert!(!is_megaplay_media_host("kotocdn.site.example.com"));
         assert!(!is_megaplay_media_host("evilmegaplay.buzz"));
+    }
+
+    #[test]
+    fn detects_separate_hls_audio_renditions() {
+        assert!(has_separate_audio_rendition(
+            "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",URI=\"audio.m3u8\"\n"
+        ));
+        assert!(!has_separate_audio_rendition(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nvideo.m3u8\n"
+        ));
     }
 
     #[test]
