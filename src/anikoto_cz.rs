@@ -619,6 +619,12 @@ impl AnikotoCzClient {
         if !text.contains("#EXTM3U") || !text.contains("#EXT-X-STREAM-INF") {
             return Ok(vec![("Auto".into(), url.into())]);
         }
+        // a media playlist contains only its video segments when audio is a
+        // separate rendition. Keep the master so the player can follow its
+        // EXT-X-MEDIA audio URI through the relay
+        if Self::has_separate_audio_rendition(&text) {
+            return Ok(vec![("Auto".into(), url.into())]);
+        }
         let base = Url::parse(url)?;
         let resolution = Regex::new(r"(?i)RESOLUTION=\d+x(\d+)").expect("static regex");
         let lines = text.lines().collect::<Vec<_>>();
@@ -644,6 +650,14 @@ impl AnikotoCzClient {
         }
         variants.sort_by_key(|(label, _)| std::cmp::Reverse(quality_number(label)));
         Ok(variants)
+    }
+
+    fn has_separate_audio_rendition(playlist: &str) -> bool {
+        playlist.lines().any(|line| {
+            let line = line.trim_start().to_ascii_uppercase();
+            line.starts_with("#EXT-X-MEDIA:")
+                && (line.contains("TYPE=AUDIO") || line.contains("TYPE=\"AUDIO\""))
+        })
     }
 
     async fn get_json(
@@ -1575,6 +1589,16 @@ mod tests {
         assert_eq!(sources[0].1, "1080p");
         assert_eq!(subtitles[0].label, "English");
         assert!(subtitles[0].default);
+    }
+
+    #[test]
+    fn detects_separate_hls_audio_renditions() {
+        assert!(AnikotoCzClient::has_separate_audio_rendition(
+            "#EXTM3U\n#EXT-X-MEDIA:TYPE=\"AUDIO\",GROUP-ID=\"audio\",URI=\"audio.m3u8\"\n"
+        ));
+        assert!(!AnikotoCzClient::has_separate_audio_rendition(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nvideo.m3u8\n"
+        ));
     }
 
     #[tokio::test]

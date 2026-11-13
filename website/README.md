@@ -10,7 +10,7 @@ To preview the site locally, you'll need Python installed.
 
 1. **Install dependencies:**
    ```sh
-   pip install mkdocs-material
+   pip install mkdocs-shadcn pymdown-extensions Pygments
    ```
 
 2. **Run the development server:**
