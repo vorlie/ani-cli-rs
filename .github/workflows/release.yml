@@ -59,7 +59,7 @@ jobs:
 
       - name: Package Unix release
         if: matrix.kind != 'windows'
-        run: ./scripts/package-release.sh ${{ matrix.target }}
+        run: sh ./scripts/package-release.sh ${{ matrix.target }}
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
