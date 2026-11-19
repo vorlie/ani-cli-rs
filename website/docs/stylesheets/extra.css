@@ -1,3 +1,11 @@
+/* Widen the main documentation article container (theme default --container-2xl is 42rem) */
+:root {
+  --container-2xl: 60rem;
+}
+
+[data-slot="docs"] article {
+  max-width: min(60rem, 100%);
+}
 
 /* Keep code blocks within the content surface */
 pre,
