@@ -19,7 +19,8 @@ case "$host_os:$host_arch" in
         echo "Official Linux ARM64 binaries are not provided. Install Rust and build ani-cli-rs from source." >&2
         exit 2
         ;;
-    Darwin:*) echo "Official macOS binaries are not provided. Install Rust and build ani-cli-rs from source." >&2; exit 2 ;;
+    Darwin:x86_64) target=x86_64-apple-darwin ;;
+    Darwin:arm64|Darwin:aarch64) target=aarch64-apple-darwin ;;
     *) echo "ani-cli-rs does not publish a build for $host_os/$host_arch." >&2; exit 2 ;;
 esac
 
