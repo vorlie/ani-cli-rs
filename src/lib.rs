@@ -1,8 +1,6 @@
 // src/lib.rs
 //! Reusable Anikoto clients and cross-platform ani-cli support modules.
 
-mod anikoto;
-mod anikoto_cz;
 mod download;
 mod error;
 mod history;
@@ -10,13 +8,13 @@ mod hls_relay;
 mod i18n;
 mod models;
 mod player;
+mod providers;
+mod util;
 
-pub use anikoto::{
-    AnikotoClient, AnikotoClientBuilder, provider_from_show_id,
-    requires_hls_relay as anikoto_requires_hls_relay,
-};
-pub use anikoto_cz::{
-    AnikotoCzClient, AnikotoCzClientBuilder, requires_hls_relay as anikoto_cz_requires_hls_relay,
+pub use providers::{
+    AnikotoClient, AnikotoClientBuilder, AnikotoCzClient, AnikotoCzClientBuilder,
+    anikoto_cz_requires_hls_relay, anikoto_requires_hls_relay, anikoto2_total_episodes,
+    provider_from_show_id,
 };
 
 /// Unified function to check if a stream requires HLS relay

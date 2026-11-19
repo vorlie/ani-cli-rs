@@ -1,29 +1,31 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    sync::Arc,
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use cbc::cipher::{BlockModeDecrypt, KeyIvInit};
 use regex::Regex;
-use reqwest::{Client, Response, StatusCode, header};
+use reqwest::{Client, header};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
+use super::common::{
+    DEFAULT_AGENT, TtlCache, checked_text as checked_provider_text, expand_hls_playlist,
+    host_matches, parse_data_id,
+};
 use crate::{
     AniError, CatalogProvider, RequestHeaders, Result, SearchOptions, SearchResult, SearchSort,
     StreamLink, SubtitleTrack, TranslationType,
     models::{sort_episodes, sort_streams},
+    util::http::{apply_headers, validate_remote_url as validate_http_url},
 };
 
 const DEFAULT_BASE: &str = "https://anikoto.cz";
 const DEFAULT_MAPPER_BASE: &str = "https://mapper.nekostream.site/api/mal";
-const DEFAULT_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
-const CACHE_TTL: Duration = Duration::from_secs(5 * 60);
-const CACHE_LIMIT: usize = 100;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PLAYLIST_BYTES: usize = 4 * 1024 * 1024;
 
@@ -57,12 +59,6 @@ struct Series {
 struct Server {
     label: String,
     token: String,
-}
-
-#[derive(Clone, Debug)]
-struct Cached<T> {
-    expires_at: Instant,
-    value: T,
 }
 
 #[derive(Clone, Debug)]
@@ -113,7 +109,7 @@ impl AnikotoCzClientBuilder {
                 base: self.base.trim_end_matches('/').into(),
                 mapper_base: self.mapper_base.trim_end_matches('/').into(),
                 user_agent: self.user_agent,
-                series: Mutex::new(HashMap::new()),
+                series: TtlCache::new(),
             }),
         })
     }
@@ -124,7 +120,7 @@ struct Inner {
     base: String,
     mapper_base: String,
     user_agent: String,
-    series: Mutex<HashMap<String, Cached<Series>>>,
+    series: TtlCache<Series>,
 }
 
 #[derive(Clone)]
@@ -221,7 +217,7 @@ impl AnikotoCzClient {
             .collect::<Vec<_>>();
         sort_episodes(&mut episodes);
         if episodes.is_empty() {
-            eprintln!("Anikoto.cz has no {mode} episodes for {}", id.title);
+            tracing::debug!("Anikoto.cz has no {mode} episodes for {}", id.title);
             return Err(AniError::NoEpisodesAvailable {
                 anime: Some(id.title.clone()),
             });
@@ -251,7 +247,7 @@ impl AnikotoCzClient {
             TranslationType::Dub => selected.dub,
         };
         if !available {
-            eprintln!("Episode {episode} has no {mode} servers");
+            tracing::debug!("Episode {episode} has no {mode} servers");
             return Err(AniError::NoEpisodesAvailable {
                 anime: Some(id.title.clone()),
             });
@@ -308,7 +304,7 @@ impl AnikotoCzClient {
             } else {
                 failures.join("; ")
             };
-            eprintln!("Anikoto.cz native source resolution failed: {detail}");
+            tracing::debug!("Anikoto.cz native source resolution failed: {detail}");
             return Err(AniError::NoPlayableSources {
                 anime: Some(id.title.clone()),
                 episode: Some(episode.to_string()),
@@ -320,7 +316,7 @@ impl AnikotoCzClient {
 
     async fn load_series(&self, slug: &str) -> Result<Series> {
         validate_slug(slug)?;
-        if let Some(value) = cache_get(&self.inner.series, slug) {
+        if let Some(value) = self.inner.series.get(slug) {
             return Ok(value);
         }
         let requested = format!("{}/watch/{slug}", self.inner.base);
@@ -353,7 +349,7 @@ impl AnikotoCzClient {
             canonical,
             episodes,
         };
-        cache_put(&self.inner.series, slug.into(), series.clone());
+        self.inner.series.put(slug.into(), series.clone());
         Ok(series)
     }
 
@@ -487,9 +483,9 @@ impl AnikotoCzClient {
                 MAX_RESPONSE_BYTES,
             )
             .await?;
-        eprintln!(
-            "[DEBUG] getSourcesNew raw: {}",
-            &raw_text[..raw_text.len().min(500)]
+        tracing::debug!(
+            raw = %&raw_text[..raw_text.len().min(500)],
+            "getSourcesNew raw response",
         );
         let mut payload: Value =
             serde_json::from_str(&raw_text).map_err(|error| AniError::ProviderInvalidResponse {
@@ -499,7 +495,7 @@ impl AnikotoCzClient {
             })?;
 
         if let Some(enc) = payload.get("enc").and_then(Value::as_str) {
-            eprintln!("[DEBUG] enc field found, attempting decryption");
+            tracing::debug!("enc field found, attempting decryption");
             let e1_script_url = Html::parse_fragment(html)
                 .select(
                     &Selector::parse("script[src]")
@@ -523,27 +519,27 @@ impl AnikotoCzClient {
                 e1_script_url
             };
 
-            eprintln!("[DEBUG] fetching e1-player script: {}", e1_script_url);
+            tracing::debug!(script_url = %e1_script_url, "fetching e1-player script");
             let js = self
                 .get_text(&e1_script_url, embed_url, false, None, MAX_RESPONSE_BYTES)
                 .await?;
             let (key, iv, secret, ttl) = player_parameters(&js)?;
-            eprintln!(
-                "[DEBUG] player params: key={:?} iv={:?} ttl={}",
-                &key[..key.len().min(8)],
-                &iv[..iv.len().min(8)],
-                ttl
+            tracing::debug!(
+                key = ?&key[..key.len().min(8)],
+                iv = ?&iv[..iv.len().min(8)],
+                ttl,
+                "extracted player crypto parameters",
             );
 
             let enc_owned = enc.to_owned();
             let mut decrypted = decrypt_source(&enc_owned, &key, &iv)?;
-            eprintln!(
-                "[DEBUG] decrypted: {}",
-                serde_json::to_string(&decrypted)
+            tracing::debug!(
+                decrypted = %serde_json::to_string(&decrypted)
                     .unwrap_or_default()
                     .chars()
                     .take(300)
-                    .collect::<String>()
+                    .collect::<String>(),
+                "decrypted source payload",
             );
 
             fn recursively_sign(v: &mut Value, secret: &str, ttl: u64) {
@@ -561,10 +557,10 @@ impl AnikotoCzClient {
                     Value::Object(obj) => {
                         for (k, val) in obj.iter_mut() {
                             if k == "file" || k == "url" || k == "src" {
-                                if let Value::String(s) = val {
-                                    if let Ok(signed) = signed_url(s, secret, ttl) {
-                                        *s = signed;
-                                    }
+                                if let Value::String(s) = val
+                                    && let Ok(signed) = signed_url(s, secret, ttl)
+                                {
+                                    *s = signed;
                                 }
                             } else {
                                 recursively_sign(val, secret, ttl);
@@ -575,22 +571,22 @@ impl AnikotoCzClient {
                 }
             }
             recursively_sign(&mut decrypted, &secret, ttl);
-            eprintln!(
-                "[DEBUG] signed decrypted: {}",
-                serde_json::to_string(&decrypted)
+            tracing::debug!(
+                signed = %serde_json::to_string(&decrypted)
                     .unwrap_or_default()
                     .chars()
                     .take(300)
-                    .collect::<String>()
+                    .collect::<String>(),
+                "signed decrypted source payload",
             );
             payload
                 .as_object_mut()
                 .unwrap()
                 .insert("sources".to_string(), decrypted);
         } else {
-            eprintln!(
-                "[DEBUG] no enc field found in payload, keys: {:?}",
-                payload.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            tracing::debug!(
+                keys = ?payload.as_object().map(|o| o.keys().collect::<Vec<_>>()),
+                "no enc field found in payload",
             );
         }
         Ok(payload)
@@ -601,8 +597,7 @@ impl AnikotoCzClient {
         url: &str,
         headers: &RequestHeaders,
     ) -> Result<Vec<(String, String)>> {
-        let mut request = self.inner.http.get(url);
-        request = apply_headers(request, headers);
+        let request = apply_headers(self.inner.http.get(url), headers);
         let response = request.send().await?;
         if !response.status().is_success() {
             return Ok(vec![("Auto".into(), url.into())]);
@@ -619,45 +614,9 @@ impl AnikotoCzClient {
         if !text.contains("#EXTM3U") || !text.contains("#EXT-X-STREAM-INF") {
             return Ok(vec![("Auto".into(), url.into())]);
         }
-        // a media playlist contains only its video segments when audio is a
-        // separate rendition. Keep the master so the player can follow its
-        // EXT-X-MEDIA audio URI through the relay
-        if Self::has_separate_audio_rendition(&text) {
-            return Ok(vec![("Auto".into(), url.into())]);
-        }
-        let base = Url::parse(url)?;
-        let resolution = Regex::new(r"(?i)RESOLUTION=\d+x(\d+)").expect("static regex");
-        let lines = text.lines().collect::<Vec<_>>();
-        let mut variants = Vec::new();
-        for (index, line) in lines.iter().enumerate() {
-            if !line.trim_start().starts_with("#EXT-X-STREAM-INF") {
-                continue;
-            }
-            let label = resolution
-                .captures(line)
-                .map(|captures| format!("{}p", &captures[1]))
-                .unwrap_or_else(|| "Auto".into());
-            if let Some(path) = lines[index + 1..]
-                .iter()
-                .map(|line| line.trim())
-                .find(|line| !line.is_empty() && !line.starts_with('#'))
-            {
-                variants.push((label, base.join(path)?.to_string()));
-            }
-        }
-        if variants.is_empty() {
-            variants.push(("Auto".into(), url.into()));
-        }
+        let mut variants = expand_hls_playlist(url, &text, "Auto")?;
         variants.sort_by_key(|(label, _)| std::cmp::Reverse(quality_number(label)));
         Ok(variants)
-    }
-
-    fn has_separate_audio_rendition(playlist: &str) -> bool {
-        playlist.lines().any(|line| {
-            let line = line.trim_start().to_ascii_uppercase();
-            line.starts_with("#EXT-X-MEDIA:")
-                && (line.contains("TYPE=AUDIO") || line.contains("TYPE=\"AUDIO\""))
-        })
     }
 
     async fn get_json(
@@ -702,8 +661,12 @@ impl AnikotoCzClient {
         if let Some(origin) = origin {
             request = request.header(header::ORIGIN, origin);
         }
-        checked_text(request.send().await?, max_bytes).await
+        checked_provider_text(request.send().await?, "Anikoto.cz", Some(max_bytes)).await
     }
+}
+
+pub fn total_episodes_from_id(show_id: &str) -> Option<u32> {
+    decode_id(show_id).ok().and_then(|id| id.episodes)
 }
 
 fn encode_id(value: &AnikotoCzId) -> Result<String> {
@@ -1140,13 +1103,6 @@ fn parse_sources(value: &Value) -> (Vec<(String, String)>, Vec<SubtitleTrack>) {
     (sources, subtitles)
 }
 
-fn parse_data_id(html: &str) -> Option<String> {
-    Regex::new(r#"(?i)\bdata-id=["'](\d+)["']"#)
-        .expect("static regex")
-        .captures(html)
-        .map(|captures| captures[1].into())
-}
-
 fn provider_invalid_response(message: impl Into<String>) -> AniError {
     AniError::ProviderInvalidResponse {
         provider: "Anikoto.cz".to_string(),
@@ -1170,64 +1126,6 @@ fn provider_result<'a>(value: &'a Value, context: &str) -> Result<&'a Value> {
     value
         .get("result")
         .ok_or_else(|| provider_invalid_response(format!("{context} response has no result")))
-}
-
-async fn checked_text(response: Response, max_bytes: usize) -> Result<String> {
-    let status = response.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after_seconds = response
-            .headers()
-            .get(header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(120);
-        return Err(AniError::ProviderRateLimited {
-            provider: "Anikoto.cz".into(),
-            retry_after_seconds,
-        });
-    }
-    if !status.is_success() {
-        return Err(AniError::ProviderCatalogError {
-            provider: "Anikoto.cz".into(),
-            message: format!("HTTP {}", status),
-            source: None,
-        });
-    }
-    if let Some(length) = response
-        .content_length()
-        .filter(|&length| length > max_bytes as u64)
-    {
-        return Err(AniError::ProviderResponseSizeExceeded {
-            provider: "Anikoto.cz".to_string(),
-            size: length as usize,
-            limit: max_bytes,
-        });
-    }
-    let bytes = response.bytes().await?;
-    if bytes.len() > max_bytes {
-        return Err(AniError::ProviderResponseSizeExceeded {
-            provider: "Anikoto.cz".to_string(),
-            size: bytes.len(),
-            limit: max_bytes,
-        });
-    }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-fn apply_headers(
-    mut request: reqwest::RequestBuilder,
-    headers: &RequestHeaders,
-) -> reqwest::RequestBuilder {
-    if let Some(referer) = &headers.referer {
-        request = request.header(header::REFERER, referer);
-    }
-    if let Some(origin) = &headers.origin {
-        request = request.header(header::ORIGIN, origin);
-    }
-    for (name, value) in &headers.extra {
-        request = request.header(name, value);
-    }
-    request
 }
 
 fn normalize_episode(value: &str) -> Result<String> {
@@ -1262,31 +1160,7 @@ fn validate_slug(value: &str) -> Result<()> {
 }
 
 fn validate_remote_url(value: &str) -> Result<Url> {
-    let url = Url::parse(value)?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
-        return Err(AniError::ProviderUrlValidationFailed {
-            reason: "unsafe provider URL".to_string(),
-        });
-    }
-    if url
-        .host_str()
-        .is_some_and(|host| host.parse::<std::net::IpAddr>().is_ok())
-    {
-        return Err(AniError::ProviderUrlValidationFailed {
-            reason: "literal-IP provider URLs are not allowed".to_string(),
-        });
-    }
-    Ok(url)
-}
-
-fn host_matches(host: &str, domain: &str) -> bool {
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
-    host == domain || host.ends_with(&format!(".{domain}"))
+    validate_http_url(value, false, true)
 }
 
 fn clean_text(value: &str) -> String {
@@ -1303,29 +1177,6 @@ fn quality_number(value: &str) -> u32 {
 
 fn encode_path(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
-}
-
-fn cache_get<T: Clone>(cache: &Mutex<HashMap<String, Cached<T>>>, key: &str) -> Option<T> {
-    let mut cache = cache.lock().ok()?;
-    cache.retain(|_, value| value.expires_at > Instant::now());
-    cache.get(key).map(|value| value.value.clone())
-}
-
-fn cache_put<T>(cache: &Mutex<HashMap<String, Cached<T>>>, key: String, value: T) {
-    if let Ok(mut cache) = cache.lock() {
-        if cache.len() >= CACHE_LIMIT
-            && let Some(key) = cache.keys().next().cloned()
-        {
-            cache.remove(&key);
-        }
-        cache.insert(
-            key,
-            Cached {
-                expires_at: Instant::now() + CACHE_TTL,
-                value,
-            },
-        );
-    }
 }
 
 pub fn requires_hls_relay(stream: &StreamLink) -> bool {
@@ -1443,6 +1294,7 @@ fn signed_url(url: &str, secret: &str, ttl: u64) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::common::has_separate_audio_rendition;
     use super::*;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
@@ -1593,10 +1445,10 @@ mod tests {
 
     #[test]
     fn detects_separate_hls_audio_renditions() {
-        assert!(AnikotoCzClient::has_separate_audio_rendition(
+        assert!(has_separate_audio_rendition(
             "#EXTM3U\n#EXT-X-MEDIA:TYPE=\"AUDIO\",GROUP-ID=\"audio\",URI=\"audio.m3u8\"\n"
         ));
-        assert!(!AnikotoCzClient::has_separate_audio_rendition(
+        assert!(!has_separate_audio_rendition(
             "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nvideo.m3u8\n"
         ));
     }
