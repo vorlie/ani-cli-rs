@@ -16,11 +16,11 @@ Although this document follows AniPlay's implementation, it is also intended as 
 
 The ani-cli-rs implementation lives primarily in:
 
-- `src/anikoto.rs`
+- `src/providers/anikoto.rs` (and `src/providers/common.rs`)
 - `src/hls_relay.rs`
-- `src/main.rs`
-- `src/player.rs`
-- `src/download.rs`
+- `src/bin_app/app.rs`
+- `src/player/`
+- `src/download/`
 
 Later sections also discuss the related AniPlay implementation as a worked Electron/Watch Together reference. Those paths are:
 

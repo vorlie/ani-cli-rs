@@ -23,7 +23,7 @@ The executable is named `ani-cli-rs`, so it can coexist with the Bash `ani-cli`.
 | Windows on ARM64 | x64 build | Yes | Windows 11 can run the published x64 build through emulation |
 | Linux x86-64 | Yes | Yes | Official release uses musl for broad distribution compatibility |
 | Linux ARM64 | No | Yes | Source build only; not device-tested by the maintainer |
-| macOS Intel/Apple Silicon | No | Tested | Build locally; IINA is selected automatically |
+| macOS Intel/Apple Silicon | Yes | Tested | Prebuilt `.tar.gz` archives (`x86_64` & `arm64`); IINA is selected automatically |
 | Android/Termux | No | Tested | Build locally; launches an Android media player through Termux intents |
 | iSH | No | Not supported | No iOS player adapter |
 

@@ -96,9 +96,9 @@ ani-cli-rs-VERSION-windows-x64-setup.exe.sha256
 
 Do not publish a release containing only the binary: the install scripts require the correctly named archive and checksum.
 
-## macOS policy
+## macOS releases
 
-Cargo aliases support local Intel and Apple Silicon builds, but official macOS assets are not published because hosted macOS CI minutes are limited and more expensive. Contributors may document successful local builds without implying official release support.
+GitHub Actions (`.github/workflows/release.yml`) builds and publishes `.tar.gz` + `.sha256` assets for both `aarch64-apple-darwin` and `x86_64-apple-darwin` on `macos-latest`. Cargo aliases also support local Intel and Apple Silicon builds.
 
 ## SemVer and commits
 

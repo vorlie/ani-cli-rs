@@ -14,13 +14,15 @@ the application.
 
 | Module | Responsibility |
 |---|---|
-| `anikoto` | Anikoto API/AniList catalog merge and MegaPlay extraction |
-| `anikoto_cz` | Anikoto.cz HTML/AJAX catalog, server tokens, MegaPlay/VidTube extraction |
+| `providers/` (`anikoto`, `anikoto_cz`, `common`) | Anikoto API/AniList & Anikoto.cz catalog resolution, MegaPlay/VidTube extraction, and shared HTTP/HLS/cache helpers |
 | `hls_relay` | Tokenized loopback playlist rewriting and PNG-wrapped TS removal |
 | `models` | Provider IDs, search results, stream metadata, quality/episode ordering |
-| `player` | Safe external-player arguments and relay lifetime |
-| `download` | Downloader fallback order, progress, subtitles, relay lifetime |
+| `error/` (`mod`, `code`, `report`) | Structured `AniError` variants, `ACL-xxxx` error codes, and `ErrorReport` formatting |
+| `player/` (`mod`, `android`) | Safe external-player arguments, Termux/Android intent launching, and relay lifetime |
+| `download/` (`mod`, `progress`, `subtitles`) | Downloader fallback order, progress rendering, FFmpeg subtitle muxing, and relay lifetime |
 | `history` | Legacy tab-separated history with self-routing provider IDs |
+| `util/` | Internal HTTP header/subtitle/URL helpers and filename/env utilities |
+| `bin_app/` | CLI-only `clap` definitions, `dialoguer` TUI prompts, workflow orchestration, updater, schedule, and logging |
 
 ## Routing
 

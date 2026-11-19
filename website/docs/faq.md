@@ -42,9 +42,9 @@ If present at `%USERPROFILE%\.aria2\aria2.conf` or `$HOME/.aria2/aria2.conf`, an
 
 The official musl binary is intended to be portable across common distributions of the same CPU architecture. A normal glibc-linked build may depend on the builder's glibc version; use the musl release target for distribution.
 
-## Why are there no macOS releases?
+## Are macOS releases provided?
 
-The project avoids consuming limited, higher-cost hosted macOS CI minutes. macOS source builds and automatic IINA playback are tested, but official assets are not promised.
+Yes. Starting with `0.12.0`, GitHub Actions builds and publishes prebuilt macOS `.tar.gz` archives for both Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`), and `install.sh` / `ani-cli-rs -U` support macOS with automatic IINA selection.
 
 ## Is there an official Linux ARM64 build?
 

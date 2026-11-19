@@ -7,9 +7,9 @@ implementation details and may change without notice.
 
 The implementation lives in:
 
-- `src/anikoto_cz.rs` for catalog and source resolution;
+- `src/providers/anikoto_cz.rs` (and `src/providers/common.rs`) for catalog and source resolution;
 - `src/hls_relay.rs` for KotoCDN playlist and segment compatibility;
-- `src/player.rs` and `src/download.rs` for relay lifetime management.
+- `src/player/` and `src/download/` for relay lifetime management.
 
 No Python helper, nginx service, or externally reachable proxy is used.
 

@@ -2,7 +2,7 @@
 
 `ani-cli-rs` can be installed directly via Cargo from [crates.io](https://crates.io/crates/ani-cli-rs), downloaded as prebuilt binaries from [GitHub Releases](https://github.com/vorlie/ani-cli-rs/releases), or built from source.
 
-Prebuilt assets are provided for Windows x64 and Linux x86-64. Linux ARM64, tested macOS, and tested Termux users build from source or install via Cargo.
+Prebuilt assets are provided for Windows x64, Linux x86-64, and macOS (Apple Silicon & Intel). Linux ARM64 and Termux users build from source or install via Cargo.
 
 ---
 
@@ -124,13 +124,18 @@ The local `cargo release-linux-arm64` alias is intended for contributors with a 
 
 ## macOS
 
-No official macOS release assets are provided. The source build and automatic IINA selection have been tested. Install the Rust toolchain and build locally:
+Official prebuilt `.tar.gz` archives are published for both Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`), and the install script works on macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/vorlie/ani-cli-rs/master/scripts/install.sh | sh
+```
+
+You can also download the `.tar.gz` archive and `.sha256` file from [GitHub Releases](https://github.com/vorlie/ani-cli-rs/releases), or build locally from source:
 
 ```sh
 git clone https://github.com/vorlie/ani-cli-rs.git
 cd ani-cli-rs
 cargo build --release --locked
-
 ```
 
 The binary is placed at `target/release/ani-cli-rs`. Copy it to a directory on your `PATH` if desired.
