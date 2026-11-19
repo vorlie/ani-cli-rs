@@ -1,7 +1,6 @@
 use std::{
     fmt,
-    io::{self, IsTerminal, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Stdio,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -12,7 +11,14 @@ use tracing::{debug, info, warn};
 use crate::{
     AniError, Result, StreamLink, relay_stream, relay_stream_without_hls_subtitles,
     requires_hls_relay,
+    util::{
+        env_bool,
+        http::{fetch_subtitle_bytes, subtitle_extension},
+        sanitize_filename,
+    },
 };
+
+mod android;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayerKind {
@@ -88,7 +94,7 @@ impl PlayerOptions {
 
     pub fn default_android_mpv() -> Self {
         Self {
-            executable: android_intent_launcher(),
+            executable: android::android_intent_launcher(),
             kind: PlayerKind::AndroidMpv,
             no_detach: true,
             exit_after_play: env_bool("ANI_CLI_EXIT_AFTER_PLAY"),
@@ -158,9 +164,9 @@ impl Player {
                 args
             }
             PlayerKind::AndroidMpv => {
-                android_intent_args("is.xyz.mpv/.MPVActivity", &stream.url, title)
+                android::android_intent_args("is.xyz.mpv/.MPVActivity", &stream.url, title)
             }
-            PlayerKind::AndroidVlc => android_intent_args(
+            PlayerKind::AndroidVlc => android::android_intent_args(
                 "org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity",
                 &stream.url,
                 title,
@@ -233,11 +239,18 @@ impl Player {
         force_attached: bool,
     ) -> Result<Option<i32>> {
         if self.is_android_player() {
-            return self.play_android(stream, title, force_attached).await;
+            let launch_args = self.command_args_inner(stream, title, true);
+            return android::play_android(
+                &self.options.executable,
+                launch_args,
+                stream,
+                title,
+                force_attached,
+            )
+            .await;
         }
 
         // Validate that the player executable exists before attempting to launch
-        // For simple names (e.g., "mpv"), check if they exist in PATH
         let needs_validation = self.options.executable.components().count() > 1;
         if needs_validation {
             if !self.options.executable.exists() {
@@ -250,7 +263,6 @@ impl Player {
                 });
             }
         } else {
-            // For simple names, check if they can be found in PATH
             use which::which;
             if which(&self.options.executable).is_err() {
                 eprintln!(
@@ -277,10 +289,6 @@ impl Player {
             attached,
             "launching external player",
         );
-        // The URL is logged at debug level so that long playlist URLs do not
-        // clutter the default log output, but the rest of the player command
-        // line (including the referer / user-agent switches) is logged at
-        // debug level for the same reason.
         debug!(
             title = %title,
             stream_url = %stream.url,
@@ -323,7 +331,6 @@ impl Player {
                 }
             }
         } else {
-            // ensure proper process detachment
             command
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -336,8 +343,7 @@ impl Player {
                         executable = %self.options.executable.display(),
                         "player launched in the background",
                     );
-                    // Immediately detach the child process
-                    let _ = child.id(); // Ensure the process handle is consumed
+                    let _ = child.id();
                     Ok(None)
                 }
                 Err(error) => {
@@ -364,7 +370,7 @@ impl Player {
         &self,
         stream: &StreamLink,
         title: &str,
-        attached: bool,
+        _attached: bool,
     ) -> Result<Vec<String>> {
         let referer = stream.headers.referer.as_deref().unwrap_or("");
         let mut args = vec!["--play-and-exit".into(), format!("--meta-title={title}")];
@@ -377,11 +383,7 @@ impl Player {
         for subtitle_path in prepare_vlc_subtitles(stream).await? {
             args.push(format!("--sub-file={subtitle_path}"));
         }
-        if !attached {
-            args.push(stream.url.clone());
-        } else {
-            args.push(stream.url.clone());
-        }
+        args.push(stream.url.clone());
         Ok(args)
     }
 
@@ -391,226 +393,6 @@ impl Player {
             PlayerKind::AndroidMpv | PlayerKind::AndroidVlc
         )
     }
-
-    async fn play_android(
-        &self,
-        stream: &StreamLink,
-        title: &str,
-        relay_active: bool,
-    ) -> Result<Option<i32>> {
-        let terminal = io::stdin().is_terminal();
-        if relay_active && !terminal {
-            return Err(AniError::PlayerAndroidTerminalRequired);
-        }
-
-        let launch_args = self.command_args_inner(stream, title, true);
-        info!(
-            title = %title,
-            executable = %self.options.executable.display(),
-            "launching Android activity for playback",
-        );
-        debug!(
-            title = %title,
-            stream_url = %stream.url,
-            args = ?launch_args,
-            "full Android intent command line",
-        );
-        let launch_result = Command::new(&self.options.executable)
-            .args(launch_args)
-            .status()
-            .await;
-        let code = match launch_result {
-            Ok(status) if status.success() => {
-                let code = status.code().unwrap_or(0);
-                info!(
-                    title = %title,
-                    exit_code = code,
-                    "Android player activity returned successfully",
-                );
-                code
-            }
-            result => {
-                let primary_error = match &result {
-                    Ok(status) => format!(
-                        "Android activity launcher {} exited with {}",
-                        self.options.executable.display(),
-                        status.code().unwrap_or(1)
-                    ),
-                    Err(error) => format!(
-                        "could not launch Android player through {}: {error}",
-                        self.options.executable.display()
-                    ),
-                };
-                warn!(
-                    title = %title,
-                    executable = %self.options.executable.display(),
-                    error = %primary_error,
-                    "primary Android launch failed; trying termux-open fallback",
-                );
-                match launch_android_url_fallback(&self.options.executable, &stream.url, stream.hls)
-                    .await
-                {
-                    Ok(code) => {
-                        warn!(
-                            title = %title,
-                            "opened the stream through Android's default URL handler instead",
-                        );
-                        eprintln!(
-                            "warning: {primary_error}; opened the stream through Android's default URL handler instead"
-                        );
-                        code
-                    }
-                    Err(fallback_error) => {
-                        warn!(
-                            title = %title,
-                            error = %fallback_error,
-                            "termux-open fallback also failed",
-                        );
-                        eprintln!("{primary_error}; {fallback_error}");
-                        return Err(AniError::PlayerLaunchFailed {
-                            executable: self.options.executable.display().to_string(),
-                            reason: format!("Android launch failed: {}", fallback_error),
-                        });
-                    }
-                }
-            }
-        };
-
-        if terminal {
-            debug!(
-                title = %title,
-                "waiting for the Android player to finish before returning control to the TUI",
-            );
-            wait_for_android_player().await?;
-        }
-        Ok(Some(code))
-    }
-}
-
-fn android_intent_args(component: &str, url: &str, title: &str) -> Vec<String> {
-    vec![
-        "start".into(),
-        "--user".into(),
-        "0".into(),
-        "-a".into(),
-        "android.intent.action.VIEW".into(),
-        "-d".into(),
-        url.into(),
-        "-n".into(),
-        component.into(),
-        "--es".into(),
-        "title".into(),
-        title.into(),
-    ]
-}
-
-fn android_intent_launcher() -> PathBuf {
-    if let Some(executable) = std::env::var_os("ANI_CLI_PLAYER") {
-        return PathBuf::from(executable);
-    }
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    ["termux-am-starter", "termux-am", "am"]
-        .iter()
-        .find_map(|name| find_in_path(name, &path))
-        .unwrap_or_else(|| PathBuf::from("termux-am-starter"))
-}
-
-fn find_in_path(executable: &str, path: &std::ffi::OsStr) -> Option<PathBuf> {
-    std::env::split_paths(path)
-        .map(|directory| directory.join(executable))
-        .find(|candidate| candidate.is_file())
-}
-
-async fn launch_android_url_fallback(
-    executable: &Path,
-    url: &str,
-    hls: bool,
-) -> std::result::Result<i32, String> {
-    if !is_termux_activity_launcher(executable) {
-        return Err(
-            "the configured custom launcher failed and cannot use the automatic Termux fallback"
-                .into(),
-        );
-    }
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let mut open_error = None;
-    if let Some(opener) = find_in_path("termux-open", &path) {
-        let status = Command::new(&opener)
-            .args(["--view", "--content-type", android_media_type(hls), url])
-            .status()
-            .await;
-        match status {
-            Ok(status) if status.success() => return Ok(status.code().unwrap_or(0)),
-            Ok(status) => {
-                open_error = Some(format!(
-                    "{} exited with {}",
-                    opener.display(),
-                    status.code().unwrap_or(1)
-                ));
-            }
-            Err(error) => {
-                open_error = Some(format!("could not run {}: {error}", opener.display()));
-            }
-        }
-    }
-    let opener = find_in_path("termux-open-url", &path).ok_or_else(|| {
-        let prefix = open_error
-            .map(|error| format!("{error}; "))
-            .unwrap_or_default();
-        format!(
-            "{prefix}termux-open-url is unavailable; install or update the termux-tools package"
-        )
-    })?;
-    let status = Command::new(&opener)
-        .arg(url)
-        .status()
-        .await
-        .map_err(|error| format!("could not run {}: {error}", opener.display()))?;
-    if !status.success() {
-        return Err(format!(
-            "{} exited with {}",
-            opener.display(),
-            status.code().unwrap_or(1)
-        ));
-    }
-    Ok(status.code().unwrap_or(0))
-}
-
-fn android_media_type(hls: bool) -> &'static str {
-    if hls {
-        "application/vnd.apple.mpegurl"
-    } else {
-        "video/mp4"
-    }
-}
-
-fn is_termux_activity_launcher(executable: &Path) -> bool {
-    executable
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| matches!(name, "termux-am-starter" | "termux-am" | "am"))
-}
-
-async fn wait_for_android_player() -> Result<()> {
-    tokio::task::spawn_blocking(|| {
-        println!(
-            "Opened the Android player. Return to Termux and press Enter after playback ends."
-        );
-        print!("Waiting for Android player... ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        Ok::<(), io::Error>(())
-    })
-    .await
-    .map_err(|error| {
-        eprintln!("Android playback prompt failed: {error}");
-        AniError::PlayerLaunchFailed {
-            executable: "android".to_string(),
-            reason: format!("playback prompt failed: {}", error),
-        }
-    })??;
-    Ok(())
 }
 
 async fn prepare_vlc_subtitles(stream: &StreamLink) -> Result<Vec<String>> {
@@ -632,82 +414,15 @@ async fn prepare_vlc_subtitles(stream: &StreamLink) -> Result<Vec<String>> {
     for (index, track) in stream.subtitles.iter().enumerate() {
         let path = temp_dir.join(format!(
             "{index}.{}.{}",
-            sanitize_filename(&track.label),
+            sanitize_filename(&track.label, "subtitle"),
             subtitle_extension(&track.url)
         ));
-        let bytes = fetch_vlc_subtitle(track, &stream.headers).await?;
+        let bytes = fetch_subtitle_bytes(track, &stream.headers, 16 * 1024 * 1024).await?;
         tokio::fs::write(&path, bytes).await?;
         local_paths.push(path.to_string_lossy().into_owned());
     }
 
     Ok(local_paths)
-}
-
-async fn fetch_vlc_subtitle(
-    track: &crate::SubtitleTrack,
-    headers: &crate::RequestHeaders,
-) -> Result<Vec<u8>> {
-    let client = reqwest::Client::builder().build()?;
-    let mut request = client.get(&track.url);
-    if let Some(referer) = &headers.referer {
-        request = request.header(reqwest::header::REFERER, referer);
-    }
-    if let Some(origin) = &headers.origin {
-        request = request.header(reqwest::header::ORIGIN, origin);
-    }
-    for (name, value) in &headers.extra {
-        request = request.header(name, value);
-    }
-
-    let response = request.send().await?;
-    if !response.status().is_success() {
-        return Err(AniError::SubtitleDownloadFailed {
-            track: track.label.clone(),
-            reason: format!("subtitle server returned {}", response.status()),
-        });
-    }
-
-    let bytes = response.bytes().await?;
-    if bytes.len() > 16 * 1024 * 1024 {
-        return Err(AniError::SubtitleSizeExceeded {
-            size: bytes.len(),
-            limit: 16 * 1024 * 1024,
-        });
-    }
-
-    Ok(bytes.to_vec())
-}
-
-fn sanitize_filename(value: &str) -> String {
-    let mut cleaned: String = value
-        .chars()
-        .map(|character| match character {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c if c.is_control() => '_',
-            other => other,
-        })
-        .collect();
-    if cleaned.is_empty() {
-        cleaned = "subtitle".to_string();
-    }
-    cleaned
-}
-
-fn subtitle_extension(url: &str) -> &'static str {
-    let parsed = url::Url::parse(url).ok();
-    let extension = parsed.and_then(|url| {
-        Path::new(url.path())
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(str::to_ascii_lowercase)
-    });
-    match extension.as_deref() {
-        Some("srt") => "srt",
-        Some("ass") => "ass",
-        Some("ssa") => "ssa",
-        Some("vtt") => "vtt",
-        _ => "vtt",
-    }
 }
 
 fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
@@ -725,7 +440,6 @@ fn mpv_options(stream: &StreamLink, title: &str, referer: &str) -> Vec<String> {
     if let Some(track) = stream.subtitles.iter().find(|track| track.default) {
         args.push(format!("--slang={}", track.label));
     }
-    // Add cache settings for HLS relay streams
     if stream.hls && requires_hls_relay(stream) {
         args.push("--cache=yes".into());
         args.push("--cache-secs=120".into());
@@ -759,16 +473,13 @@ fn safe_header_value(value: &str) -> bool {
     !value.contains(['\r', '\n'])
 }
 
-fn env_bool(name: &str) -> bool {
-    std::env::var(name)
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::{RequestHeaders, SubtitleTrack};
+
     #[test]
     fn mpv_arguments_preserve_referrer_as_one_argument() {
         let player = Player::new(PlayerOptions {
@@ -865,44 +576,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn android_mpv_arguments_use_an_explicit_view_intent() {
-        let player = Player::new(PlayerOptions {
-            executable: "termux-am-starter".into(),
-            kind: PlayerKind::AndroidMpv,
-            no_detach: true,
-            exit_after_play: false,
-            force_hls_relay: false,
-        });
-        let stream = StreamLink {
-            url: "http://127.0.0.1:43123/stream-token".into(),
-            resolution: "1080p".into(),
-            hls: true,
-            provider: "Anikoto".into(),
-            downloadable: true,
-            headers: RequestHeaders::default(),
-            subtitles: vec![],
-        };
-
-        assert_eq!(
-            player.command_args(&stream, "Anime Episode 1"),
-            vec![
-                "start",
-                "--user",
-                "0",
-                "-a",
-                "android.intent.action.VIEW",
-                "-d",
-                "http://127.0.0.1:43123/stream-token",
-                "-n",
-                "is.xyz.mpv/.MPVActivity",
-                "--es",
-                "title",
-                "Anime Episode 1",
-            ]
-        );
-    }
-
     #[tokio::test]
     async fn vlc_downloads_remote_subtitles_to_local_files() {
         use wiremock::{
@@ -947,63 +620,6 @@ mod tests {
                 .unwrap()
                 .contains("Hello from the subtitle")
         );
-    }
-
-    #[test]
-    fn android_vlc_arguments_target_the_android_app_not_terminal_vlc() {
-        let player = Player::new(PlayerOptions {
-            executable: "am".into(),
-            kind: PlayerKind::AndroidVlc,
-            no_detach: true,
-            exit_after_play: false,
-            force_hls_relay: false,
-        });
-        let stream = StreamLink {
-            url: "https://media.example/episode.m3u8".into(),
-            resolution: "720p".into(),
-            hls: true,
-            provider: "Anikoto".into(),
-            downloadable: true,
-            headers: RequestHeaders::default(),
-            subtitles: vec![],
-        };
-
-        assert!(
-            player.command_args(&stream, "Episode").contains(
-                &"org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity".into()
-            )
-        );
-    }
-
-    #[test]
-    fn android_launcher_lookup_prefers_the_first_available_candidate() {
-        let directory = tempfile::tempdir().unwrap();
-        std::fs::write(directory.path().join("termux-am"), "").unwrap();
-        let path = std::env::join_paths([directory.path()]).unwrap();
-
-        assert_eq!(
-            find_in_path("termux-am", &path),
-            Some(directory.path().join("termux-am"))
-        );
-        assert_eq!(find_in_path("termux-am-starter", &path), None);
-    }
-
-    #[test]
-    fn only_termux_activity_launchers_allow_the_url_opener_fallback() {
-        assert!(is_termux_activity_launcher(Path::new("termux-am-starter")));
-        assert!(is_termux_activity_launcher(Path::new(
-            "/data/data/com.termux/files/usr/bin/termux-am"
-        )));
-        assert!(is_termux_activity_launcher(Path::new("am")));
-        assert!(!is_termux_activity_launcher(Path::new(
-            "/data/local/tmp/custom-launcher"
-        )));
-    }
-
-    #[test]
-    fn android_fallback_uses_specific_media_types() {
-        assert_eq!(android_media_type(true), "application/vnd.apple.mpegurl");
-        assert_eq!(android_media_type(false), "video/mp4");
     }
 
     #[test]

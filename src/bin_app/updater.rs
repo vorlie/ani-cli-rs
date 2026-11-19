@@ -1,8 +1,8 @@
 use std::{path::PathBuf, time::SystemTime};
 
 use ani_lib::{AniError, Result};
+use semver::Version;
 use serde::Deserialize;
-#[cfg(not(target_os = "macos"))] // suppress build errors for unused import on macOS
 use tokio::process::Command;
 
 const REPOSITORY: &str = "vorlie/ani-cli-rs";
@@ -35,6 +35,21 @@ pub async fn run(check_only: bool) -> Result<()> {
 
     let script = download_installer(&release.tag_name).await?;
     launch_installer(&script).await
+}
+
+pub async fn check_and_notify_new_version(current_version: &str) -> Result<()> {
+    let release = fetch_latest_release().await?;
+    let latest = release.tag_name.trim().trim_start_matches('v');
+    if let (Ok(latest_ver), Ok(current_ver)) =
+        (Version::parse(latest), Version::parse(current_version))
+        && latest_ver > current_ver
+    {
+        eprintln!(
+            "\x1b[33mA new version of ani-cli-rs is available: {} (current: {}). Run `ani-cli-rs -U` to update.\x1b[0m",
+            latest, current_version
+        );
+    }
+    Ok(())
 }
 
 async fn fetch_latest_release() -> Result<GitHubRelease> {
@@ -102,7 +117,7 @@ async fn launch_installer(script: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(unix)]
 async fn launch_installer(script: &std::path::Path) -> Result<()> {
     let status = Command::new("sh")
         .arg(script)
@@ -119,14 +134,6 @@ async fn launch_installer(script: &std::path::Path) -> Result<()> {
     }
 }
 
-#[cfg(target_os = "macos")]
-async fn launch_installer(script: &std::path::Path) -> Result<()> {
-    let _ = tokio::fs::remove_file(script).await;
-    Err(AniError::PlatformNotSupported {
-        platform: "macOS".to_string(),
-    })
-}
-
 fn installer_url(tag: &str, extension: &str) -> String {
     format!("https://raw.githubusercontent.com/{REPOSITORY}/{tag}/scripts/install.{extension}")
 }
@@ -139,29 +146,15 @@ fn valid_tag(tag: &str) -> bool {
 }
 
 fn is_newer_release(current: &str, latest: &str) -> Result<bool> {
-    let current = version_components(current).ok_or_else(|| AniError::UpdateCheckFailed {
-        reason: format!("invalid current version: {current}"),
-    })?;
-    let latest = version_components(latest).ok_or_else(|| AniError::UpdateCheckFailed {
-        reason: format!("invalid release version: {latest}"),
-    })?;
+    let parse = |value: &str, label: &str| {
+        let normalized = value.trim().trim_start_matches('v');
+        Version::parse(normalized).map_err(|_| AniError::UpdateCheckFailed {
+            reason: format!("invalid {label} version: {value}"),
+        })
+    };
+    let current = parse(current, "current")?;
+    let latest = parse(latest, "release")?;
     Ok(latest > current)
-}
-
-fn version_components(value: &str) -> Option<[u64; 3]> {
-    let core = value
-        .trim()
-        .strip_prefix('v')
-        .unwrap_or(value.trim())
-        .split(['-', '+'])
-        .next()?;
-    let mut components = core.split('.');
-    let version = [
-        components.next()?.parse().ok()?,
-        components.next()?.parse().ok()?,
-        components.next()?.parse().ok()?,
-    ];
-    components.next().is_none().then_some(version)
 }
 
 #[cfg(test)]

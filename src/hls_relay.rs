@@ -21,7 +21,9 @@ use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use tracing::{debug, info};
 use url::Url;
 
-use crate::{AniError, RequestHeaders, Result, StreamLink, SubtitleTrack};
+use crate::{
+    AniError, RequestHeaders, Result, StreamLink, SubtitleTrack, util::http::apply_headers,
+};
 
 const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SUBTITLE_BYTES: usize = 2 * 1024 * 1024;
@@ -301,18 +303,12 @@ async fn handle_inner(
             )
         });
     }
-    let mut upstream = state
-        .client
-        .request(request.method().clone(), registered.url.clone());
-    if let Some(value) = &registered.headers.referer {
-        upstream = upstream.header(header::REFERER, value);
-    }
-    if let Some(value) = &registered.headers.origin {
-        upstream = upstream.header(header::ORIGIN, value);
-    }
-    for (name, value) in &registered.headers.extra {
-        upstream = upstream.header(name, value);
-    }
+    let mut upstream = apply_headers(
+        state
+            .client
+            .request(request.method().clone(), registered.url.clone()),
+        &registered.headers,
+    );
     let conditional_headers = [header::IF_NONE_MATCH, header::IF_MODIFIED_SINCE];
     if registered.kind != ResourceKind::Segment
         && let Some(value) = request.headers().get(header::RANGE)
@@ -520,16 +516,7 @@ async fn probe_subtitle_duration(
     url: &Url,
     headers: &RequestHeaders,
 ) -> Option<f64> {
-    let mut request = client.get(url.clone());
-    if let Some(value) = &headers.referer {
-        request = request.header(header::REFERER, value);
-    }
-    if let Some(value) = &headers.origin {
-        request = request.header(header::ORIGIN, value);
-    }
-    for (name, value) in &headers.extra {
-        request = request.header(name, value);
-    }
+    let request = apply_headers(client.get(url.clone()), headers);
     let response = request.send().await.ok()?.error_for_status().ok()?;
     let bytes = response.bytes().await.ok()?;
     if bytes.len() > MAX_SUBTITLE_BYTES {

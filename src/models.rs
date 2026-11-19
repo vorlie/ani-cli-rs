@@ -243,7 +243,7 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
         if requested.iter().all(|v| available.contains(v)) {
             return Ok(requested);
         }
-        eprintln!("One or more selected episodes do not exist");
+        tracing::debug!("One or more selected episodes do not exist");
         return Err(AniError::InvalidEpisodeSelection {
             episode: trimmed.to_string(),
             reason: "one or more selected episodes do not exist".to_string(),
@@ -268,7 +268,7 @@ pub fn expand_episode_selection(selection: &str, available: &[String]) -> Result
             }
         })?;
         if start_index > end_index {
-            eprintln!("Episode range is reversed");
+            tracing::debug!("Episode range is reversed");
             return Err(AniError::InvalidEpisodeSelection {
                 episode: trimmed.to_string(),
                 reason: "episode range is reversed".to_string(),

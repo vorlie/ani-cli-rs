@@ -1,28 +1,29 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    sync::Arc,
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use regex::Regex;
-use reqwest::{Client, Response, StatusCode, header};
+use reqwest::{Client, Response, header};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use url::Url;
 
+use super::common::{
+    DEFAULT_AGENT, TtlCache, checked_text, expand_hls_playlist, is_megaplay_media_host,
+    parse_data_id,
+};
 use crate::{
     AniError, CatalogProvider, RequestHeaders, Result, SearchOptions, SearchResult, StreamLink,
     SubtitleTrack, TranslationType,
     models::{sort_episodes, sort_streams},
+    util::http::{apply_headers, validate_remote_url as validate_http_url},
 };
 
 const DEFAULT_ANIKOTO_API: &str = "https://anikotoapi.site";
 const DEFAULT_ANILIST_API: &str = "https://graphql.anilist.co";
 const DEFAULT_MEGAPLAY_BASE: &str = "https://megaplay.buzz";
-const DEFAULT_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
-const CACHE_TTL: Duration = Duration::from_secs(5 * 60);
-const CACHE_LIMIT: usize = 100;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -45,12 +46,6 @@ struct AnikotoEpisode {
     embed_id: Option<String>,
     sub_url: Option<String>,
     dub_url: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-struct Cached<T> {
-    expires_at: Instant,
-    value: T,
 }
 
 #[derive(Clone, Debug)]
@@ -109,8 +104,8 @@ impl AnikotoClientBuilder {
                 anilist_api: self.anilist_api,
                 megaplay_base: self.megaplay_base.trim_end_matches('/').into(),
                 user_agent: self.user_agent,
-                searches: Mutex::new(HashMap::new()),
-                series: Mutex::new(HashMap::new()),
+                searches: TtlCache::new(),
+                series: TtlCache::new(),
             }),
         })
     }
@@ -122,8 +117,8 @@ struct Inner {
     anilist_api: String,
     megaplay_base: String,
     user_agent: String,
-    searches: Mutex<HashMap<String, Cached<Vec<SearchResult>>>>,
-    series: Mutex<HashMap<String, Cached<Vec<AnikotoEpisode>>>>,
+    searches: TtlCache<Vec<SearchResult>>,
+    series: TtlCache<Vec<AnikotoEpisode>>,
 }
 
 #[derive(Clone)]
@@ -156,7 +151,7 @@ impl AnikotoClient {
             return Err(AniError::EmptySearchQuery);
         }
         let cache_key = format!("{}:{}", options.allow_adult, query.to_ascii_lowercase());
-        if let Some(value) = cache_get(&self.inner.searches, &cache_key) {
+        if let Some(value) = self.inner.searches.get(&cache_key) {
             return Ok(value);
         }
 
@@ -185,7 +180,7 @@ impl AnikotoClient {
                 });
             }
         };
-        cache_put(&self.inner.searches, cache_key, values.clone());
+        self.inner.searches.put(cache_key, values.clone());
         Ok(values)
     }
 
@@ -242,9 +237,9 @@ impl AnikotoClient {
                 Err(error) => failures.push(error.to_string()),
             }
         }
-        eprintln!(
-            "Anikoto native source resolution failures: {}",
-            failures.join("; ")
+        tracing::debug!(
+            failures = %failures.join("; "),
+            "Anikoto native source resolution failed",
         );
         Err(AniError::NoPlayableSources {
             anime: id.title.clone(),
@@ -281,12 +276,12 @@ impl AnikotoClient {
         let Some(series_id) = id.anikoto_id.as_deref() else {
             return Ok(vec![]);
         };
-        if let Some(value) = cache_get(&self.inner.series, series_id) {
+        if let Some(value) = self.inner.series.get(series_id) {
             return Ok(value);
         }
         let url = format!("{}/series/{}", self.inner.anikoto_api, series_id);
         let value = parse_episode_payload(&self.get_json(&url, None, None).await?);
-        cache_put(&self.inner.series, series_id.to_owned(), value.clone());
+        self.inner.series.put(series_id.to_owned(), value.clone());
         Ok(value)
     }
 
@@ -300,7 +295,7 @@ impl AnikotoClient {
             .header(header::ACCEPT, "text/html,application/json,text/plain,*/*")
             .send()
             .await?;
-        let html = checked_text(html, "MegaPlay").await?;
+        let html = checked_text(html, "MegaPlay", None).await?;
         let data_id = parse_data_id(&html).ok_or_else(|| AniError::ProviderInvalidResponse {
             provider: "MegaPlay".to_string(),
             message: "embed did not expose a playable source id".to_string(),
@@ -354,8 +349,7 @@ impl AnikotoClient {
         fallback_resolution: &str,
         headers: &RequestHeaders,
     ) -> Result<Vec<StreamLink>> {
-        let mut request = self.inner.http.get(url);
-        request = apply_headers(request, headers);
+        let request = apply_headers(self.inner.http.get(url), headers);
         let response = request.send().await?;
         if !response.status().is_success() {
             return Ok(vec![stream_link(
@@ -374,50 +368,13 @@ impl AnikotoClient {
                 headers.clone(),
             )]);
         }
-        // A media playlist contains only its video segments when audio is a
-        // separate rendition. Keep the master so the player can follow its
-        // EXT-X-MEDIA audio URI through the relay.
-        if has_separate_audio_rendition(&text) {
-            return Ok(vec![stream_link(
-                url.into(),
-                fallback_resolution.into(),
-                true,
-                headers.clone(),
-            )]);
-        }
-        let base = Url::parse(url)?;
-        let resolution = Regex::new(r"RESOLUTION=\d+x(\d+)").expect("static regex");
-        let mut streams = Vec::new();
-        let mut lines = text.lines();
-        while let Some(line) = lines.next() {
-            if !line.starts_with("#EXT-X-STREAM-INF:") {
-                continue;
-            }
-            let label = resolution
-                .captures(line)
-                .map(|captures| format!("{}p", &captures[1]))
-                .unwrap_or_else(|| fallback_resolution.into());
-            if let Some(path) = lines.by_ref().find(|line| {
-                let line = line.trim();
-                !line.is_empty() && !line.starts_with('#')
-            }) {
-                streams.push(stream_link(
-                    base.join(path.trim())?.to_string(),
-                    label,
-                    true,
-                    headers.clone(),
-                ));
-            }
-        }
-        if streams.is_empty() {
-            streams.push(stream_link(
-                url.into(),
-                fallback_resolution.into(),
-                true,
-                headers.clone(),
-            ));
-        }
-        Ok(streams)
+        let variants = expand_hls_playlist(url, &text, fallback_resolution)?;
+        Ok(variants
+            .into_iter()
+            .map(|(resolution, variant_url)| {
+                stream_link(variant_url, resolution, true, headers.clone())
+            })
+            .collect())
     }
 
     async fn get_json(
@@ -636,13 +593,6 @@ fn embed_candidates(
     candidates
 }
 
-fn parse_data_id(html: &str) -> Option<String> {
-    Regex::new(r#"(?i)\bdata-id=["'](\d+)["']"#)
-        .expect("static regex")
-        .captures(html)
-        .map(|captures| captures[1].to_owned())
-}
-
 fn parse_megaplay_sources(value: &Value) -> (Vec<(String, String)>, Vec<SubtitleTrack>) {
     fn collect_sources(value: &Value, values: &mut Vec<(String, String)>) {
         match value {
@@ -746,24 +696,6 @@ fn media_headers(host: &str, user_agent: &str) -> RequestHeaders {
     }
 }
 
-pub(crate) fn is_megaplay_media_host(host: &str) -> bool {
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    [
-        "megaplay.buzz",
-        "mewstream.buzz",
-        "lostproject.club",
-        "voltara.click",
-        "kotocdn.site",
-        "megap.shiora.top",
-        "shiora.top",
-        "megap.kotocdn.site",
-        "megap.akirax.buzz",
-        "akirax.buzz",
-    ]
-    .iter()
-    .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
-}
-
 pub fn requires_hls_relay(stream: &StreamLink) -> bool {
     stream.hls
         && Url::parse(&stream.url)
@@ -784,120 +716,13 @@ fn stream_link(url: String, resolution: String, hls: bool, headers: RequestHeade
     }
 }
 
-fn apply_headers(
-    mut request: reqwest::RequestBuilder,
-    headers: &RequestHeaders,
-) -> reqwest::RequestBuilder {
-    if let Some(referer) = &headers.referer {
-        request = request.header(header::REFERER, referer);
-    }
-    if let Some(origin) = &headers.origin {
-        request = request.header(header::ORIGIN, origin);
-    }
-    for (name, value) in &headers.extra {
-        request = request.header(name, value);
-    }
-    request
-}
-
-fn has_separate_audio_rendition(playlist: &str) -> bool {
-    playlist.lines().any(|line| {
-        let line = line.trim_start().to_ascii_uppercase();
-        line.starts_with("#EXT-X-MEDIA:")
-            && (line.contains("TYPE=AUDIO") || line.contains("TYPE=\"AUDIO\""))
-    })
-}
-
 async fn checked_json(response: Response, provider: &str) -> Result<Value> {
-    let status = response.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after_seconds = response
-            .headers()
-            .get(header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(120);
-        return Err(AniError::ProviderRateLimited {
-            provider: provider.into(),
-            retry_after_seconds,
-        });
-    }
-    if !status.is_success() {
-        return Err(AniError::ProviderCatalogError {
-            provider: provider.into(),
-            message: format!("HTTP {}", status),
-            source: None,
-        });
-    }
-    response.json().await.map_err(Into::into)
-}
-
-async fn checked_text(response: Response, provider: &str) -> Result<String> {
-    let status = response.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after_seconds = response
-            .headers()
-            .get(header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(120);
-        return Err(AniError::ProviderRateLimited {
-            provider: provider.into(),
-            retry_after_seconds,
-        });
-    }
-    if !status.is_success() {
-        return Err(AniError::ProviderCatalogError {
-            provider: provider.into(),
-            message: format!("HTTP {}", status),
-            source: None,
-        });
-    }
-    response.text().await.map_err(Into::into)
+    let text = checked_text(response, provider, None).await?;
+    serde_json::from_str(&text).map_err(Into::into)
 }
 
 fn validate_remote_url(value: &str) -> Result<Url> {
-    let url = Url::parse(value)?;
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err(AniError::ProviderUrlValidationFailed {
-            reason: "media URL contains credentials".to_string(),
-        });
-    }
-    let loopback = url.host_str().is_some_and(|host| {
-        host == "localhost"
-            || host
-                .parse::<std::net::IpAddr>()
-                .is_ok_and(|ip| ip.is_loopback())
-    });
-    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err(AniError::ProviderUrlValidationFailed {
-            reason: "media URL must use HTTPS".to_string(),
-        });
-    }
-    Ok(url)
-}
-
-fn cache_get<T: Clone>(cache: &Mutex<HashMap<String, Cached<T>>>, key: &str) -> Option<T> {
-    let mut cache = cache.lock().ok()?;
-    cache.retain(|_, value| value.expires_at > Instant::now());
-    cache.get(key).map(|value| value.value.clone())
-}
-
-fn cache_put<T>(cache: &Mutex<HashMap<String, Cached<T>>>, key: String, value: T) {
-    if let Ok(mut cache) = cache.lock() {
-        if cache.len() >= CACHE_LIMIT
-            && let Some(key) = cache.keys().next().cloned()
-        {
-            cache.remove(&key);
-        }
-        cache.insert(
-            key,
-            Cached {
-                expires_at: Instant::now() + CACHE_TTL,
-                value,
-            },
-        );
-    }
+    validate_http_url(value, true, false)
 }
 
 fn value_string(value: &Value) -> Option<String> {
@@ -934,6 +759,7 @@ fn normalize_title(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::common::has_separate_audio_rendition;
     use super::*;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
